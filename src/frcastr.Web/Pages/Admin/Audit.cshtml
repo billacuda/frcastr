@@ -1,0 +1,83 @@
+@page
+@model frcastr.Web.Pages.Admin.AuditModel
+@{
+    ViewData["Title"] = "Audit Log";
+}
+
+<div class="container-fluid py-4">
+    <h1 class="h3 mb-3">Audit Log</h1>
+
+    <form method="get" class="row g-2 mb-3">
+        <div class="col-md-3">
+            <select name="eventType" class="form-select form-select-sm" onchange="this.form.submit()">
+                <option value="">All events</option>
+                @foreach (var e in Model.EventTypes)
+                { <option value="@e" selected="@(Model.FilterEvent == e)">@e</option> }
+            </select>
+        </div>
+        <div class="col-md-3">
+            <input type="text" name="user" class="form-control form-control-sm"
+                   placeholder="Filter by user" value="@Model.FilterUser" />
+        </div>
+        <div class="col-auto">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
+            <a asp-page="/Admin/Audit" class="btn btn-sm btn-outline-secondary ms-1">Clear</a>
+        </div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle font-monospace-sm">
+            <thead>
+                <tr>
+                    <th>Time (UTC)</th>
+                    <th>Event</th>
+                    <th>User</th>
+                    <th>Entity</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var log in Model.Logs)
+                {
+                    <tr>
+                        <td class="small text-body-secondary text-nowrap">@log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="small fw-semibold">@log.EventType</td>
+                        <td class="small">@(log.UserName ?? log.UserId ?? "–")</td>
+                        <td class="small">
+                            @if (log.EntityType is not null)
+                            { <span class="text-body-secondary">@log.EntityType: </span> }
+                            @(log.EntityName ?? log.EntityId ?? "")
+                        </td>
+                        <td class="small text-truncate" style="max-width:300px">
+                            @if (log.NewValue is not null)
+                            { <span>→ @log.NewValue</span> }
+                            @if (log.OldValue is not null && log.NewValue is not null)
+                            { <span class="text-body-secondary"> (was @log.OldValue)</span> }
+                        </td>
+                    </tr>
+                }
+                @if (!Model.Logs.Any())
+                {
+                    <tr><td colspan="5" class="text-center text-body-secondary py-3">No audit events found.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @if (Model.TotalPages > 1)
+    {
+        <nav>
+            <ul class="pagination pagination-sm">
+                @for (int p = 1; p <= Model.TotalPages; p++)
+                {
+                    <li class="page-item @(p == Model.CurrentPage ? "active" : "")">
+                        <a class="page-link" asp-page="/Admin/Audit"
+                           asp-route-page="@p.ToString()"
+                           asp-route-eventType="@Model.FilterEvent"
+                           asp-route-user="@Model.FilterUser">@p</a>
+                    </li>
+                }
+            </ul>
+        </nav>
+    }
+</div>

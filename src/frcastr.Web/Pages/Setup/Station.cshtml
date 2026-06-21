@@ -1,0 +1,63 @@
+@page
+@model frcastr.Web.Pages.Setup.StationModel
+@{
+    ViewData["Title"] = "Step 3: Station";
+}
+
+<div class="setup-step-header text-center mb-4">
+    <div class="step-indicator">
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step active">3</div>
+        <div class="step">4</div>
+        <div class="step">5</div>
+        <div class="step">6</div>
+    </div>
+    <h4>Station Location</h4>
+    <p class="text-muted small">Configure the location of your weather station.</p>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+            <div class="mb-3">
+                <label asp-for="Input.Name" class="form-label">Station Name <span class="text-danger">*</span></label>
+                <input asp-for="Input.Name" class="form-control" />
+                <span asp-validation-for="Input.Name" class="text-danger small"></span>
+            </div>
+            <div class="row">
+                <div class="col mb-3">
+                    <label asp-for="Input.Latitude" class="form-label">Latitude <span class="text-danger">*</span></label>
+                    <input asp-for="Input.Latitude" type="number" step="0.000001" class="form-control" placeholder="47.6062" />
+                    <span asp-validation-for="Input.Latitude" class="text-danger small"></span>
+                </div>
+                <div class="col mb-3">
+                    <label asp-for="Input.Longitude" class="form-label">Longitude <span class="text-danger">*</span></label>
+                    <input asp-for="Input.Longitude" type="number" step="0.000001" class="form-control" placeholder="-122.3321" />
+                    <span asp-validation-for="Input.Longitude" class="text-danger small"></span>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Elevation" class="form-label">Elevation (meters)</label>
+                <input asp-for="Input.Elevation" type="number" step="0.1" class="form-control" placeholder="0" />
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.TimeZone" class="form-label">Time Zone <span class="text-danger">*</span></label>
+                <select asp-for="Input.TimeZone" class="form-select">
+                    @foreach (var tz in Model.TimeZones)
+                    {
+                        <option value="@tz.Id" selected="@(tz.Id == Model.Input.TimeZone)">
+                            @tz.DisplayName
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary">Next →</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/frcastr.Core/frcastr.Core.csproj" />
+    <Project Path="src/frcastr.Infrastructure/frcastr.Infrastructure.csproj" />
+    <Project Path="src/frcastr.Web/frcastr.Web.csproj" />
+  </Folder>
+</Solution>

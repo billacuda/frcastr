@@ -1,0 +1,144 @@
+@page
+@model frcastr.Web.Pages.Admin.WidgetsModel
+@{
+    ViewData["Title"] = "Widgets";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Widgets</h1>
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Widget</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr><th>Title</th><th>Type</th><th>Dashboard</th><th>Position (X,Y,W,H)</th><th>Sort</th><th>Visible</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var w in Model.Widgets)
+                {
+                    <tr id="wrow-@w.Id" data-widget='@System.Text.Json.JsonSerializer.Serialize(w)'>
+                        <td class="fw-semibold">@w.Title</td>
+                        <td><span class="badge text-bg-secondary">@w.Type</span></td>
+                        <td class="small text-body-secondary">@w.DashboardName</td>
+                        <td class="small text-body-secondary">@w.GridX,@w.GridY — @w.GridW×@w.GridH</td>
+                        <td class="small">@w.SortOrder</td>
+                        <td>@(w.IsVisible ? "✓" : "–")</td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-primary" onclick="openEditModal(@w.Id)">Edit</button>
+                                <button class="btn btn-outline-danger" onclick="deleteWidget(@w.Id, '@w.Title.Replace("'","\\'")')">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="widgetModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="widgetModalTitle">Add Widget</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="widgetId" value="0" />
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label">Title</label>
+                        <input type="text" class="form-control" id="widgetTitle" /></div>
+                    <div class="col-md-3"><label class="form-label">Type</label>
+                        <select class="form-select" id="widgetType">
+                            @foreach (var t in WidgetsModel.AllTypes)
+                            { <option value="@((int)t)">@t</option> }
+                        </select></div>
+                    <div class="col-md-3"><label class="form-label">Dashboard</label>
+                        <input type="text" class="form-control" id="widgetDashboardName" value="Default" placeholder="Default" /></div>
+                    <div class="col-3"><label class="form-label">Grid X</label>
+                        <input type="number" min="0" class="form-control" id="widgetX" value="0" /></div>
+                    <div class="col-3"><label class="form-label">Grid Y</label>
+                        <input type="number" min="0" class="form-control" id="widgetY" value="0" /></div>
+                    <div class="col-3"><label class="form-label">Width</label>
+                        <input type="number" min="1" max="12" class="form-control" id="widgetW" value="4" /></div>
+                    <div class="col-3"><label class="form-label">Height</label>
+                        <input type="number" min="1" class="form-control" id="widgetH" value="3" /></div>
+                    <div class="col-md-4"><label class="form-label">Sort Order</label>
+                        <input type="number" class="form-control" id="widgetSort" value="10" /></div>
+                    <div class="col-md-4 d-flex align-items-end"><div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="widgetVisible" checked />
+                        <label class="form-check-label" for="widgetVisible">Visible</label>
+                    </div></div>
+                    <div class="col-12"><label class="form-label">Config (JSON)</label>
+                        <textarea class="form-control font-monospace" id="widgetConfig" rows="5" placeholder='{"channel": "temperature.outdoor", "unit": "C"}'></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveWidget()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function openAddModal() {
+    document.getElementById('widgetId').value = '0';
+    document.getElementById('widgetModalTitle').textContent = 'Add Widget';
+    ['widgetTitle','widgetConfig'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('widgetType').value = '1';
+    document.getElementById('widgetDashboardName').value = 'Default';
+    document.getElementById('widgetX').value = '0';
+    document.getElementById('widgetY').value = '0';
+    document.getElementById('widgetW').value = '4';
+    document.getElementById('widgetH').value = '3';
+    document.getElementById('widgetSort').value = '10';
+    document.getElementById('widgetVisible').checked = true;
+    new bootstrap.Modal('#widgetModal').show();
+}
+
+function openEditModal(id) {
+    const w = JSON.parse(document.getElementById('wrow-' + id).dataset.widget);
+    document.getElementById('widgetId').value = id;
+    document.getElementById('widgetModalTitle').textContent = 'Edit Widget';
+    document.getElementById('widgetTitle').value = w.title;
+    document.getElementById('widgetType').value = w.type;
+    document.getElementById('widgetDashboardName').value = w.dashboardName || 'Default';
+    document.getElementById('widgetX').value = w.gridX;
+    document.getElementById('widgetY').value = w.gridY;
+    document.getElementById('widgetW').value = w.gridW;
+    document.getElementById('widgetH').value = w.gridH;
+    document.getElementById('widgetSort').value = w.sortOrder;
+    document.getElementById('widgetVisible').checked = w.isVisible;
+    document.getElementById('widgetConfig').value = w.config ? JSON.stringify(JSON.parse(w.config), null, 2) : '';
+    new bootstrap.Modal('#widgetModal').show();
+}
+
+async function saveWidget() {
+    const id = parseInt(document.getElementById('widgetId').value);
+    const body = {
+        type: parseInt(document.getElementById('widgetType').value),
+        title: document.getElementById('widgetTitle').value,
+        dashboardName: document.getElementById('widgetDashboardName').value.trim() || 'Default',
+        config: document.getElementById('widgetConfig').value.trim() || null,
+        gridX: parseInt(document.getElementById('widgetX').value) || 0,
+        gridY: parseInt(document.getElementById('widgetY').value) || 0,
+        gridW: parseInt(document.getElementById('widgetW').value) || 4,
+        gridH: parseInt(document.getElementById('widgetH').value) || 3,
+        sortOrder: parseInt(document.getElementById('widgetSort').value) || 10,
+        isVisible: document.getElementById('widgetVisible').checked
+    };
+    const url = id ? '/api/admin/widgets/' + id : '/api/admin/widgets';
+    const r = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+}
+
+async function deleteWidget(id, title) {
+    if (!confirm('Delete widget "' + title + '"?')) return;
+    await fetch('/api/admin/widgets/' + id, { method: 'DELETE' });
+    location.reload();
+}
+</script>
+}

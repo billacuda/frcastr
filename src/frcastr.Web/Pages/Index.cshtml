@@ -1,0 +1,73 @@
+@page
+@model frcastr.Web.Pages.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+    ViewData["DashboardPage"] = true;
+}
+
+<div id="dashboardWrapper" class="px-2 py-2">
+    <div id="dashboard-grid" class="grid-stack"></div>
+</div>
+
+<div class="modal fade" id="addWidgetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Widget</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Widget Type</label>
+                    <select class="form-select" id="awType">
+                        <option value="0">Date / Time</option>
+                        <option value="1">Temperature (Outdoor)</option>
+                        <option value="2">Temperature (Indoor)</option>
+                        <option value="3">Humidity (Outdoor)</option>
+                        <option value="4">Humidity (Indoor)</option>
+                        <option value="5">Pressure</option>
+                        <option value="6">Wind</option>
+                        <option value="7">Weather Animation</option>
+                        <option value="8">Forecast</option>
+                        <option value="9">Moon</option>
+                        <option value="10">Custom</option>
+                        <option value="11">Sunrise / Sunset</option>
+                        <option value="12">Alerts</option>
+                        <option value="13">Feels Like</option>
+                        <option value="14">Rainfall</option>
+                        <option value="15">Pressure Trend</option>
+                        <option value="16">Air Quality</option>
+                        <option value="17">Radar</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <input type="text" class="form-control" id="awTitle" />
+                </div>
+                <div class="mb-0">
+                    <label class="form-label">Config (JSON, optional)</label>
+                    <textarea class="form-control font-monospace small" id="awConfig" rows="3" placeholder='{"channel": "temperature.outdoor"}'></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addWidget()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.frcastrConfig = {
+    pollIntervalSeconds: @Model.PollIntervalSeconds,
+    kioskMode: @(Model.KioskMode ? "true" : "false"),
+    theme: '@Model.Theme',
+    isAuthenticated: @(User.Identity?.IsAuthenticated == true ? "true" : "false"),
+    isAdmin: @(User.IsInRole("Administrator") ? "true" : "false")
+};
+</script>
+
+@section Scripts {
+<script src="~/js/weather-widgets.js" asp-append-version="true"></script>
+<script src="~/js/dashboard.js" asp-append-version="true"></script>
+}

@@ -1,0 +1,131 @@
+@page
+@model frcastr.Web.Pages.Admin.WebhooksModel
+@{
+    ViewData["Title"] = "Webhook Alerts";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Webhook Alerts</h1>
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Webhook</button>
+    </div>
+
+    @if (!Model.Webhooks.Any())
+    {
+        <p class="text-body-secondary">No webhook alerts configured.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead><tr><th>Name</th><th>Channel</th><th>Condition</th><th>URL</th><th>Enabled</th><th>Last Triggered</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var w in Model.Webhooks)
+                    {
+                        <tr id="wh-@w.Id" data-hook='@System.Text.Json.JsonSerializer.Serialize(w)'>
+                            <td class="fw-semibold">@w.Name</td>
+                            <td class="small font-monospace">@w.Channel</td>
+                            <td class="small">@w.Operator @w.Threshold @w.Unit</td>
+                            <td class="small text-truncate" style="max-width:200px" title="@w.WebhookUrl">@w.WebhookUrl</td>
+                            <td>@(w.IsEnabled ? "✓" : "–")</td>
+                            <td class="small text-body-secondary">@(w.LastTriggeredAt?.ToString("MM/dd HH:mm") ?? "–")</td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" onclick="openEditModal(@w.Id)">Edit</button>
+                                    <button class="btn btn-outline-danger" onclick="deleteHook(@w.Id, '@w.Name.Replace("'","\\'")')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="modal fade" id="hookModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="hookModalTitle">Add Webhook Alert</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="hookId" value="0" />
+                <div class="row g-3">
+                    <div class="col-12"><label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="hookName" /></div>
+                    <div class="col-md-8"><label class="form-label">Channel</label>
+                        <input type="text" class="form-control font-monospace" id="hookChannel" placeholder="temperature.outdoor" /></div>
+                    <div class="col-md-4"><label class="form-label">Unit</label>
+                        <input type="text" class="form-control" id="hookUnit" placeholder="°C" /></div>
+                    <div class="col-md-6"><label class="form-label">Operator</label>
+                        <select class="form-select" id="hookOp">
+                            <option value="0">Above</option>
+                            <option value="1">Below</option>
+                        </select></div>
+                    <div class="col-md-6"><label class="form-label">Threshold</label>
+                        <input type="number" step="any" class="form-control" id="hookThreshold" /></div>
+                    <div class="col-12"><label class="form-label">Webhook URL</label>
+                        <input type="url" class="form-control" id="hookUrl" placeholder="https://..." /></div>
+                    <div class="col-12"><div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="hookEnabled" checked />
+                        <label class="form-check-label" for="hookEnabled">Enabled</label>
+                    </div></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveHook()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function openAddModal() {
+    document.getElementById('hookId').value = '0';
+    document.getElementById('hookModalTitle').textContent = 'Add Webhook Alert';
+    ['hookName','hookChannel','hookUnit','hookUrl'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('hookOp').value = '0';
+    document.getElementById('hookThreshold').value = '0';
+    document.getElementById('hookEnabled').checked = true;
+    new bootstrap.Modal('#hookModal').show();
+}
+
+function openEditModal(id) {
+    const h = JSON.parse(document.getElementById('wh-' + id).dataset.hook);
+    document.getElementById('hookId').value = id;
+    document.getElementById('hookModalTitle').textContent = 'Edit Webhook Alert';
+    document.getElementById('hookName').value = h.name;
+    document.getElementById('hookChannel').value = h.channel;
+    document.getElementById('hookUnit').value = h.unit;
+    document.getElementById('hookOp').value = h.operator === 'Above' || h.operator === 0 ? '0' : '1';
+    document.getElementById('hookThreshold').value = h.threshold;
+    document.getElementById('hookUrl').value = h.webhookUrl;
+    document.getElementById('hookEnabled').checked = h.isEnabled;
+    new bootstrap.Modal('#hookModal').show();
+}
+
+async function saveHook() {
+    const id = parseInt(document.getElementById('hookId').value);
+    const body = {
+        name: document.getElementById('hookName').value,
+        channel: document.getElementById('hookChannel').value,
+        operator: parseInt(document.getElementById('hookOp').value),
+        threshold: parseFloat(document.getElementById('hookThreshold').value) || 0,
+        unit: document.getElementById('hookUnit').value,
+        webhookUrl: document.getElementById('hookUrl').value,
+        isEnabled: document.getElementById('hookEnabled').checked
+    };
+    const url = id ? '/api/admin/webhooks/' + id : '/api/admin/webhooks';
+    const r = await fetch(url, { method: id ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+}
+
+async function deleteHook(id, name) {
+    if (!confirm('Delete "' + name + '"?')) return;
+    await fetch('/api/admin/webhooks/' + id, { method: 'DELETE' });
+    location.reload();
+}
+</script>
+}

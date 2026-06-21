@@ -1,0 +1,66 @@
+@page
+@model frcastr.Web.Pages.Setup.ReviewModel
+@{
+    ViewData["Title"] = "Step 6: Review";
+}
+
+<div class="setup-step-header text-center mb-4">
+    <div class="step-indicator">
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step active">6</div>
+    </div>
+    <h4>Review Configuration</h4>
+    <p class="text-muted small">Confirm your settings and complete setup.</p>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-subtitle text-muted mb-3">Database</h6>
+        <p class="mb-0"><strong>Connection:</strong> @(Model.IsDbConfigured ? "✅ Configured" : "❌ Not configured")</p>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-subtitle text-muted mb-3">Station</h6>
+        <p class="mb-1"><strong>Name:</strong> @Model.StationName</p>
+        <p class="mb-1"><strong>Location:</strong> @Model.Latitude, @Model.Longitude</p>
+        <p class="mb-0"><strong>Time Zone:</strong> @Model.TimeZone</p>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3">
+    <div class="card-body">
+        <h6 class="card-subtitle text-muted mb-3">Branding</h6>
+        <p class="mb-1"><strong>App Name:</strong> @Model.AppName</p>
+        <p class="mb-0">
+            <strong>Primary Color:</strong>
+            <span class="badge" style="background:@Model.PrimaryColor">@Model.PrimaryColor</span>
+        </p>
+    </div>
+</div>
+
+@if (Model.EmailConfigured)
+{
+    <div class="card shadow-sm mb-3">
+        <div class="card-body">
+            <h6 class="card-subtitle text-muted mb-3">Email</h6>
+            <p class="mb-0">✅ Email configured (<strong>@Model.SmtpHost</strong>)</p>
+        </div>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
+<form method="post">
+    <div class="d-grid">
+        <button type="submit" class="btn btn-success btn-lg">Complete Setup</button>
+    </div>
+</form>

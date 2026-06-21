@@ -1,0 +1,192 @@
+@page
+@model frcastr.Web.Pages.Admin.DataSourcesModel
+@using frcastr.Core.Enums
+@{
+    ViewData["Title"] = "Data Sources";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Data Sources</h1>
+        <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Source</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr><th>Name</th><th>Type</th><th>Enabled</th><th>Poll (s)</th><th>Last Polled</th><th>Last Error</th><th></th></tr>
+            </thead>
+            <tbody id="sourcesBody">
+                @foreach (var s in Model.Sources)
+                {
+                    <tr id="row-@s.Id" data-source='@System.Text.Json.JsonSerializer.Serialize(s)'>
+                        <td class="fw-semibold">@s.Name</td>
+                        <td><span class="badge text-bg-secondary">@s.Type</span></td>
+                        <td>
+                            @if (s.IsEnabled)
+                            { <span class="badge text-bg-success">Enabled</span> }
+                            else
+                            { <span class="badge text-bg-secondary">Disabled</span> }
+                        </td>
+                        <td>@(s.Type is DataSourceType.Pull or DataSourceType.Forecast or DataSourceType.Alerts or DataSourceType.AirQuality ? s.PollIntervalSeconds.ToString() : "–")</td>
+                        <td class="small text-body-secondary">@(s.LastPolledAt?.ToString("MM/dd HH:mm") ?? "–")</td>
+                        <td class="small text-danger text-truncate" style="max-width:200px" title="@s.LastError">@(s.LastError ?? "")</td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-outline-secondary" onclick="toggleSource(@s.Id)">Toggle</button>
+                                <button class="btn btn-outline-primary"   onclick="openEditModal(@s.Id)">Edit</button>
+                                @if (s.Type == DataSourceType.Push)
+                                {
+                                    <button class="btn btn-outline-warning" onclick="rotateKey(@s.Id)">Rotate Key</button>
+                                }
+                                <button class="btn btn-outline-danger" onclick="deleteSource(@s.Id, '@s.Name')">Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* Add/Edit Modal *@
+<div class="modal fade" id="sourceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title" id="sourceModalTitle">Add Data Source</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" id="sourceId" value="0" />
+                <div class="row g-3">
+                    <div class="col-md-8"><label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="sourceName" /></div>
+                    <div class="col-md-4"><label class="form-label">Type</label>
+                        <select class="form-select" id="sourceType" onchange="onTypeChange()">
+                            @foreach (var t in DataSourcesModel.AllTypes)
+                            { <option value="@t">@t</option> }
+                        </select></div>
+                    <div class="col-md-4" id="pollRow"><label class="form-label">Poll Interval (s)</label>
+                        <input type="number" min="10" class="form-control" id="sourcePoll" value="300" /></div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="sourceEnabled" checked />
+                            <label class="form-check-label" for="sourceEnabled">Enabled</label>
+                        </div>
+                    </div>
+                    <div class="col-12" id="urlRow"><label class="form-label">URL</label>
+                        <input type="url" class="form-control font-monospace" id="sourceUrl" placeholder="https://example.com/api/data" /></div>
+                    <div class="col-12"><label class="form-label">Config (JSON)</label>
+                        <textarea class="form-control font-monospace" id="sourceConfig" rows="6" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveSource()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Rotate Key Modal *@
+<div class="modal fade" id="keyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">New API Key</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="small text-body-secondary">Copy this key now. It will not be shown again.</p>
+                <div class="input-group">
+                    <input type="text" class="form-control font-monospace" id="newKeyDisplay" readonly />
+                    <button class="btn btn-outline-secondary" onclick="copyKey()">Copy</button>
+                </div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+const noPollTypes = ['Push', 'Mqtt', 'DataSink'];
+const noUrlTypes  = ['Push', 'Mqtt'];
+
+function onTypeChange() {
+    const t = document.getElementById('sourceType').value;
+    document.getElementById('pollRow').style.display = noPollTypes.includes(t) ? 'none' : '';
+    document.getElementById('urlRow').style.display  = noUrlTypes.includes(t)  ? 'none' : '';
+}
+
+function openAddModal() {
+    document.getElementById('sourceId').value = '0';
+    document.getElementById('sourceModalTitle').textContent = 'Add Data Source';
+    document.getElementById('sourceName').value = '';
+    document.getElementById('sourceType').value = 'Pull';
+    document.getElementById('sourcePoll').value = '300';
+    document.getElementById('sourceEnabled').checked = true;
+    document.getElementById('sourceUrl').value = '';
+    document.getElementById('sourceConfig').value = '';
+    onTypeChange();
+    new bootstrap.Modal('#sourceModal').show();
+}
+
+function openEditModal(id) {
+    const row = document.getElementById('row-' + id);
+    const s = JSON.parse(row.dataset.source);
+    document.getElementById('sourceId').value = id;
+    document.getElementById('sourceModalTitle').textContent = 'Edit Data Source';
+    document.getElementById('sourceName').value = s.name;
+    document.getElementById('sourceType').value = s.type;
+    document.getElementById('sourcePoll').value = s.pollIntervalSeconds;
+    document.getElementById('sourceEnabled').checked = s.isEnabled;
+    document.getElementById('sourceUrl').value = s.url ?? '';
+    document.getElementById('sourceConfig').value = s.config ? JSON.stringify(JSON.parse(s.config), null, 2) : '';
+    onTypeChange();
+    new bootstrap.Modal('#sourceModal').show();
+}
+
+async function saveSource() {
+    const id = parseInt(document.getElementById('sourceId').value);
+    const body = {
+        name: document.getElementById('sourceName').value,
+        type: document.getElementById('sourceType').value,
+        isEnabled: document.getElementById('sourceEnabled').checked,
+        pollIntervalSeconds: parseInt(document.getElementById('sourcePoll').value) || 300,
+        url: document.getElementById('sourceUrl').value.trim() || null,
+        config: document.getElementById('sourceConfig').value.trim() || null
+    };
+    const url = id ? '/api/admin/datasources/' + id : '/api/admin/datasources';
+    const method = id ? 'PUT' : 'POST';
+    const r = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (r.ok) { location.reload(); } else {
+        const txt = await r.text();
+        alert('Error: ' + txt);
+    }
+}
+
+async function toggleSource(id) {
+    await fetch('/api/admin/datasources/' + id + '/toggle', { method: 'POST' });
+    location.reload();
+}
+
+async function deleteSource(id, name) {
+    if (!confirm('Delete "' + name + '"?')) return;
+    await fetch('/api/admin/datasources/' + id, { method: 'DELETE' });
+    location.reload();
+}
+
+async function rotateKey(id) {
+    const r = await fetch('/api/admin/datasources/' + id + '/rotate-key', { method: 'POST' });
+    if (!r.ok) { alert('Failed to rotate key'); return; }
+    const data = await r.json();
+    document.getElementById('newKeyDisplay').value = data.plainKey;
+    new bootstrap.Modal('#keyModal').show();
+}
+
+function copyKey() {
+    const el = document.getElementById('newKeyDisplay');
+    el.select();
+    document.execCommand('copy');
+}
+</script>
+}

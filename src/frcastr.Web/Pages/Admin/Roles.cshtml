@@ -1,0 +1,98 @@
+@page
+@model frcastr.Web.Pages.Admin.RolesModel
+@{
+    ViewData["Title"] = "Roles & Permissions";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Roles &amp; Permissions</h1>
+        <button class="btn btn-primary btn-sm" onclick="addRole()">+ Add Role</button>
+    </div>
+
+    @foreach (var roleRow in Model.Roles)
+    {
+        <div class="card mb-4">
+            <div class="card-header d-flex align-items-center">
+                <span class="fw-semibold me-auto">@roleRow.Role.Name</span>
+                @if (roleRow.Role.Name != "Administrator")
+                {
+                    <button class="btn btn-sm btn-outline-success me-2" onclick="savePerms('@roleRow.Role.Id', this)">Save</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteRole('@roleRow.Role.Id', '@roleRow.Role.Name')">Delete</button>
+                }
+                else
+                {
+                    <span class="badge text-bg-primary">System role — full access</span>
+                }
+            </div>
+            @if (roleRow.Role.Name != "Administrator")
+            {
+                <div class="card-body p-0 table-responsive">
+                    <table class="table table-sm table-bordered mb-0" data-role-id="@roleRow.Role.Id">
+                        <thead>
+                            <tr>
+                                <th class="w-25">Resource</th>
+                                @foreach (var action in RolesModel.Actions)
+                                { <th class="text-center">@action</th> }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var res in RolesModel.Resources)
+                            {
+                                <tr>
+                                    <td class="small">@res</td>
+                                    @foreach (var action in RolesModel.Actions)
+                                    {
+                                        var has = roleRow.Perms.Contains((res, action));
+                                        <td class="text-center">
+                                            <input type="checkbox" class="form-check-input perm-cb"
+                                                   data-resource="@res" data-action="@action"
+                                                   @(has ? "checked" : "") />
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script>
+async function savePerms(roleId, btn) {
+    const table = document.querySelector('table[data-role-id="' + roleId + '"]');
+    const checked = table.querySelectorAll('.perm-cb:checked');
+    const permissions = Array.from(checked).map(cb => ({
+        resource: cb.dataset.resource,
+        action: cb.dataset.action
+    }));
+    const r = await fetch('/api/admin/roles/' + roleId + '/permissions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions })
+    });
+    btn.textContent = r.ok ? '✓ Saved' : '✗ Error';
+    setTimeout(() => btn.textContent = 'Save', 2000);
+}
+
+async function addRole() {
+    const name = prompt('Role name:');
+    if (!name) return;
+    const r = await fetch('/api/admin/roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+    });
+    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+}
+
+async function deleteRole(id, name) {
+    if (!confirm('Delete role "' + name + '"?')) return;
+    await fetch('/api/admin/roles/' + id, { method: 'DELETE' });
+    location.reload();
+}
+</script>
+}

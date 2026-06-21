@@ -1,0 +1,154 @@
+@page
+@model frcastr.Web.Pages.HistoryModel
+@{
+    ViewData["Title"] = "History";
+}
+
+<div class="container-fluid py-3">
+    <ul class="nav nav-tabs mb-3" id="historyTabs">
+        <li class="nav-item">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-period">Period Summary</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-records">All-Time Records</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-export">Export</button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <!-- Period Summary -->
+        <div class="tab-pane fade show active" id="tab-period">
+            <div class="row align-items-end mb-3 g-2">
+                <div class="col-auto">
+                    <select id="periodSelect" class="form-select">
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <input type="date" id="dateSelect" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="col-auto">
+                    <button class="btn btn-primary" onclick="loadHistory()">Load</button>
+                </div>
+            </div>
+            <div id="historyCharts" class="row g-3"></div>
+        </div>
+
+        <!-- All-Time Records -->
+        <div class="tab-pane fade" id="tab-records">
+            <div id="recordsLoading" class="text-muted">Loading…</div>
+            <table class="table table-striped d-none" id="recordsTable">
+                <thead>
+                    <tr>
+                        <th>Channel</th>
+                        <th>All-Time High</th>
+                        <th>Date</th>
+                        <th>All-Time Low</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody id="recordsBody"></tbody>
+            </table>
+        </div>
+
+        <!-- Export -->
+        <div class="tab-pane fade" id="tab-export">
+            <div class="row align-items-end g-2 mb-3">
+                <div class="col-auto">
+                    <label class="form-label">Period</label>
+                    <select id="exportPeriod" class="form-select">
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label">Date</label>
+                    <input type="date" id="exportDate" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                </div>
+                <div class="col-auto align-self-end">
+                    <a id="exportBtn" href="#" class="btn btn-success">Download CSV</a>
+                </div>
+            </div>
+            <p class="text-muted small">CSV includes Timestamp, Channel, Value, Unit columns.</p>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+async function loadHistory() {
+    const period = document.getElementById('periodSelect').value;
+    const date = document.getElementById('dateSelect').value;
+    const res = await fetch(`/api/weather/history?period=${period}&date=${date}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    renderHistoryCharts(data);
+}
+
+function renderHistoryCharts(data) {
+    const container = document.getElementById('historyCharts');
+    container.innerHTML = '';
+    const channels = [...new Set([
+        ...data.rawPoints.map(p => p.channelName),
+        ...data.aggregatePoints.map(p => p.channelName)
+    ])];
+    channels.forEach(ch => {
+        const col = document.createElement('div');
+        col.className = 'col-12 col-md-6';
+        const canvas = document.createElement('canvas');
+        canvas.id = 'chart-' + ch.replace(/\./g, '_');
+        col.innerHTML = `<div class="card"><div class="card-body"><h6 class="card-title">${ch}</h6></div></div>`;
+        col.querySelector('.card-body').appendChild(canvas);
+        container.appendChild(col);
+        const points = data.rawPoints.filter(p => p.channelName === ch)
+            .map(p => ({ x: p.timestamp, y: p.value }));
+        new Chart(canvas, {
+            type: 'line',
+            data: { datasets: [{ label: ch, data: points, fill: false, tension: 0.2 }] },
+            options: { scales: { x: { type: 'time' }, y: {} }, plugins: { legend: { display: false } } }
+        });
+    });
+}
+
+async function loadRecords() {
+    const res = await fetch('/api/weather/records');
+    if (!res.ok) return;
+    const records = await res.json();
+    document.getElementById('recordsLoading').classList.add('d-none');
+    const tbody = document.getElementById('recordsBody');
+    tbody.innerHTML = records.map(r => `
+        <tr>
+            <td>${r.channelName}</td>
+            <td>${r.allTimeMax}</td>
+            <td>${new Date(r.allTimeMaxAt).toLocaleDateString()}</td>
+            <td>${r.allTimeMin}</td>
+            <td>${new Date(r.allTimeMinAt).toLocaleDateString()}</td>
+        </tr>`).join('');
+    document.getElementById('recordsTable').classList.remove('d-none');
+}
+
+function updateExportLink() {
+    const period = document.getElementById('exportPeriod').value;
+    const date = document.getElementById('exportDate').value;
+    document.getElementById('exportBtn').href = `/api/weather/export?period=${period}&date=${date}&format=csv`;
+}
+
+document.getElementById('exportPeriod').addEventListener('change', updateExportLink);
+document.getElementById('exportDate').addEventListener('change', updateExportLink);
+updateExportLink();
+
+// Load records when tab is shown
+document.querySelector('[data-bs-target="#tab-records"]').addEventListener('shown.bs.tab', () => {
+    if (document.getElementById('recordsLoading').classList.contains('d-none')) return;
+    loadRecords();
+});
+
+// Auto-load period on page load
+loadHistory();
+</script>
+}

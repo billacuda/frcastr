@@ -1,0 +1,87 @@
+@page
+@model frcastr.Web.Pages.Admin.IndexModel
+@{
+    ViewData["Title"] = "Admin";
+}
+
+<div class="container py-4">
+    <h1 class="h3 mb-4">Administration</h1>
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <a class="card text-decoration-none text-body" asp-page="/Admin/Users">
+                <div class="card-body text-center py-3">
+                    <div class="display-6 fw-bold">@Model.UserCount</div>
+                    <div class="small text-body-secondary">Users</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-3">
+            <a class="card text-decoration-none text-body" asp-page="/Admin/DataSources">
+                <div class="card-body text-center py-3">
+                    <div class="display-6 fw-bold">@Model.SourceCount</div>
+                    <div class="small text-body-secondary">Data Sources</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-3">
+            <a class="card text-decoration-none text-body" asp-page="/Admin/Widgets">
+                <div class="card-body text-center py-3">
+                    <div class="display-6 fw-bold">@Model.WidgetCount</div>
+                    <div class="small text-body-secondary">Widgets</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-3">
+            <a class="card text-decoration-none text-body" asp-page="/Admin/Webhooks">
+                <div class="card-body text-center py-3">
+                    <div class="display-6 fw-bold">@Model.WebhookCount</div>
+                    <div class="small text-body-secondary">Webhooks</div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header small fw-semibold">Quick Links</div>
+                <div class="list-group list-group-flush">
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/DataSources">Data Sources</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Widgets">Widgets</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Users">Users</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Roles">Roles &amp; Permissions</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Webhooks">Webhook Alerts</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Audit">Audit Log</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header small fw-semibold">Recent Activity</div>
+                @if (Model.RecentAudit.Count == 0)
+                {
+                    <div class="card-body text-body-secondary small">No activity yet.</div>
+                }
+                else
+                {
+                    <ul class="list-group list-group-flush">
+                        @foreach (var log in Model.RecentAudit)
+                        {
+                            <li class="list-group-item py-1">
+                                <div class="d-flex justify-content-between">
+                                    <span class="small fw-semibold">@log.EventType</span>
+                                    <span class="small text-body-secondary">@log.CreatedAt.ToString("MM/dd HH:mm")</span>
+                                </div>
+                                @if (log.EntityName is not null)
+                                {
+                                    <div class="x-small text-body-secondary">@log.EntityName</div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+</div>

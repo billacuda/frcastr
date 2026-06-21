@@ -1,0 +1,52 @@
+@page
+@model frcastr.Web.Pages.Setup.BrandingModel
+@{
+    ViewData["Title"] = "Step 5: Branding";
+}
+
+<div class="setup-step-header text-center mb-4">
+    <div class="step-indicator">
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step active">5</div>
+        <div class="step">6</div>
+    </div>
+    <h4>Branding</h4>
+    <p class="text-muted small">Customize the appearance of your weather station.</p>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+            <div class="mb-3">
+                <label asp-for="Input.AppName" class="form-label">Application Name <span class="text-danger">*</span></label>
+                <input asp-for="Input.AppName" class="form-control" />
+                <span asp-validation-for="Input.AppName" class="text-danger small"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.PrimaryColor" class="form-label">Primary Color</label>
+                <div class="input-group">
+                    <input asp-for="Input.PrimaryColor" type="color" class="form-control form-control-color"
+                           style="max-width: 60px;" id="colorPicker" oninput="syncColor(this.value)" />
+                    <input type="text" class="form-control" id="colorHex" value="@Model.Input.PrimaryColor"
+                           maxlength="7" oninput="syncPicker(this.value)" />
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary">Next →</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function syncColor(val) { document.getElementById('colorHex').value = val; }
+function syncPicker(val) { if (/^#[0-9a-fA-F]{6}$/.test(val)) document.getElementById('colorPicker').value = val; }
+</script>
+}

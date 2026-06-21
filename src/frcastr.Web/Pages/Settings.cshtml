@@ -1,0 +1,265 @@
+@page
+@model frcastr.Web.Pages.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<div class="container py-4" style="max-width:800px">
+    <h1 class="h3 mb-4">Settings</h1>
+
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="settingsToast" class="toast align-items-center text-bg-success border-0" role="alert">
+            <div class="d-flex"><div class="toast-body">Settings saved.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+        </div>
+        <div id="errorToast" class="toast align-items-center text-bg-danger border-0" role="alert">
+            <div class="d-flex"><div class="toast-body" id="errorToastMsg">Error saving settings.</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>
+        </div>
+    </div>
+
+    <div class="accordion" id="settingsAccordion">
+
+        @* ── Station ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#colStation">Station</button></h2>
+            <div id="colStation" class="accordion-collapse collapse show" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-12"><label class="form-label">Station Name</label>
+                            <input type="text" class="form-control" data-setting-key="Station.Name" value="@Model.Get("Station.Name", "My Weather Station")" /></div>
+                        <div class="col-md-6"><label class="form-label">Latitude</label>
+                            <input type="number" step="any" class="form-control" data-setting-key="Station.Latitude" value="@Model.Get("Station.Latitude")" /></div>
+                        <div class="col-md-6"><label class="form-label">Longitude</label>
+                            <input type="number" step="any" class="form-control" data-setting-key="Station.Longitude" value="@Model.Get("Station.Longitude")" /></div>
+                        <div class="col-md-6"><label class="form-label">Elevation (meters)</label>
+                            <input type="number" class="form-control" data-setting-key="Station.Elevation" value="@Model.Get("Station.Elevation", "0")" /></div>
+                        <div class="col-md-6"><label class="form-label">Time Zone</label>
+                            <select class="form-select" data-setting-key="Station.TimeZone">
+                                @foreach (var tz in TimeZoneInfo.GetSystemTimeZones())
+                                {
+                                    if (Model.Get("Station.TimeZone") == tz.Id)
+                                    { <option value="@tz.Id" selected>@tz.DisplayName</option> }
+                                    else
+                                    { <option value="@tz.Id">@tz.DisplayName</option> }
+                                }
+                            </select></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colStation')">Save Station</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Dashboard ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colDashboard">Dashboard</button></h2>
+            <div id="colDashboard" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Poll Interval (seconds)</label>
+                            <input type="number" min="5" max="300" class="form-control" data-setting-key="Dashboard.PollIntervalSeconds" value="@Model.Get("Dashboard.PollIntervalSeconds", "30")" /></div>
+                        <div class="col-md-6 d-flex align-items-end"><div class="form-check form-switch ms-2">
+                            <input class="form-check-input" type="checkbox" id="kioskMode" data-setting-key="Dashboard.KioskMode" @(Model.Get("Dashboard.KioskMode") == "true" ? "checked" : "") />
+                            <label class="form-check-label" for="kioskMode">Kiosk Mode</label>
+                        </div></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colDashboard')">Save Dashboard</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Display ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colDisplay">Display</button></h2>
+            <div id="colDisplay" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Temperature Unit</label>
+                            <select class="form-select" data-setting-key="Display.TemperatureUnit">
+                                <option value="C" selected="@(Model.Get("Display.TemperatureUnit", "C") == "C" ? "selected" : null)">Celsius (°C)</option>
+                                <option value="F" selected="@(Model.Get("Display.TemperatureUnit") == "F" ? "selected" : null)">Fahrenheit (°F)</option>
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label">Wind Speed Unit</label>
+                            <select class="form-select" data-setting-key="Display.WindUnit">
+                                <option value="kmh"   selected="@(Model.Get("Display.WindUnit", "kmh") == "kmh"   ? "selected" : null)">km/h</option>
+                                <option value="mph"   selected="@(Model.Get("Display.WindUnit") == "mph"   ? "selected" : null)">mph</option>
+                                <option value="ms"    selected="@(Model.Get("Display.WindUnit") == "ms"    ? "selected" : null)">m/s</option>
+                                <option value="knots" selected="@(Model.Get("Display.WindUnit") == "knots" ? "selected" : null)">knots</option>
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label">Pressure Unit</label>
+                            <select class="form-select" data-setting-key="Display.PressureUnit">
+                                <option value="hPa"  selected="@(Model.Get("Display.PressureUnit", "hPa") == "hPa"  ? "selected" : null)">hPa</option>
+                                <option value="inHg" selected="@(Model.Get("Display.PressureUnit") == "inHg" ? "selected" : null)">inHg</option>
+                                <option value="mmHg" selected="@(Model.Get("Display.PressureUnit") == "mmHg" ? "selected" : null)">mmHg</option>
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label">Rainfall Unit</label>
+                            <select class="form-select" data-setting-key="Display.RainUnit">
+                                <option value="mm" selected="@(Model.Get("Display.RainUnit", "mm") == "mm" ? "selected" : null)">mm</option>
+                                <option value="in" selected="@(Model.Get("Display.RainUnit") == "in" ? "selected" : null)">in</option>
+                            </select></div>
+                        <div class="col-md-6"><label class="form-label">Theme</label>
+                            <select class="form-select" data-setting-key="Display.Theme">
+                                <option value="auto"  selected="@(Model.Get("Display.Theme", "auto") == "auto"  ? "selected" : null)">Auto (system)</option>
+                                <option value="light" selected="@(Model.Get("Display.Theme") == "light" ? "selected" : null)">Light</option>
+                                <option value="dark"  selected="@(Model.Get("Display.Theme") == "dark"  ? "selected" : null)">Dark</option>
+                            </select></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colDisplay')">Save Display</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Trend ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colTrend">Trend</button></h2>
+            <div id="colTrend" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Sample Count</label>
+                            <input type="number" min="2" max="100" class="form-control" data-setting-key="Trend.SampleCount" value="@Model.Get("Trend.SampleCount", "10")" /></div>
+                        <div class="col-md-6"><label class="form-label">Threshold (°)</label>
+                            <input type="number" step="0.1" class="form-control" data-setting-key="Trend.ThresholdDegrees" value="@Model.Get("Trend.ThresholdDegrees", "0.5")" /></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colTrend')">Save Trend</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Alerts ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colAlerts">Alerts</button></h2>
+            <div id="colAlerts" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Sensor Offline Threshold (min)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Alerts.SensorOfflineThresholdMinutes" value="@Model.Get("Alerts.SensorOfflineThresholdMinutes", "10")" /></div>
+                        <div class="col-md-6"><label class="form-label">Webhook Cooldown (min)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Alerts.WebhookCooldownMinutes" value="@Model.Get("Alerts.WebhookCooldownMinutes", "30")" /></div>
+                        <div class="col-md-6 d-flex align-items-end"><div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="emailOnWebhook" data-setting-key="Alerts.EmailOnWebhookTrigger" @(Model.Get("Alerts.EmailOnWebhookTrigger") == "true" ? "checked" : "") />
+                            <label class="form-check-label" for="emailOnWebhook">Email on Webhook Trigger</label>
+                        </div></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colAlerts')">Save Alerts</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Retention ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colRetention">Retention</button></h2>
+            <div id="colRetention" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-4"><label class="form-label">Raw Data (days)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Weather.RawRetentionDays" value="@Model.Get("Weather.RawRetentionDays", "30")" /></div>
+                        <div class="col-md-4"><label class="form-label">Hourly Aggregates (days)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Weather.HourlyRetentionDays" value="@Model.Get("Weather.HourlyRetentionDays", "365")" /></div>
+                        <div class="col-md-4"><label class="form-label">Daily Aggregates (days, 0=forever)</label>
+                            <input type="number" min="0" class="form-control" data-setting-key="Weather.DailyRetentionDays" value="@Model.Get("Weather.DailyRetentionDays", "0")" /></div>
+                        <div class="col-md-4"><label class="form-label">Records Retention (days, 0=forever)</label>
+                            <input type="number" min="0" class="form-control" data-setting-key="Records.RetentionDays" value="@Model.Get("Records.RetentionDays", "0")" /></div>
+                        <div class="col-md-4"><label class="form-label">Forecast Cache (hours)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Forecast.CacheRetentionHours" value="@Model.Get("Forecast.CacheRetentionHours", "48")" /></div>
+                        <div class="col-md-4"><label class="form-label">Alerts Cache (hours)</label>
+                            <input type="number" min="1" class="form-control" data-setting-key="Alerts.CacheRetentionHours" value="@Model.Get("Alerts.CacheRetentionHours", "24")" /></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colRetention')">Save Retention</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Email ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colEmail">Email</button></h2>
+            <div id="colEmail" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-8"><label class="form-label">SMTP Host</label>
+                            <input type="text" class="form-control" data-setting-key="Email.SmtpHost" value="@Model.Get("Email.SmtpHost")" placeholder="smtp.example.com" /></div>
+                        <div class="col-md-2"><label class="form-label">Port</label>
+                            <input type="number" class="form-control" data-setting-key="Email.SmtpPort" value="@Model.Get("Email.SmtpPort", "587")" /></div>
+                        <div class="col-md-2 d-flex align-items-end"><div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="smtpSsl" data-setting-key="Email.SmtpUseSsl" @(Model.Get("Email.SmtpUseSsl", "true") == "true" ? "checked" : "") />
+                            <label class="form-check-label" for="smtpSsl">SSL</label>
+                        </div></div>
+                        <div class="col-md-6"><label class="form-label">Username</label>
+                            <input type="text" class="form-control" data-setting-key="Email.SmtpUsername" value="@Model.Get("Email.SmtpUsername")" /></div>
+                        <div class="col-md-6"><label class="form-label">Password</label>
+                            <input type="password" class="form-control" data-setting-key="Email.SmtpPassword" value="@Model.Get("Email.SmtpPassword")" /></div>
+                        <div class="col-md-6"><label class="form-label">From Address</label>
+                            <input type="email" class="form-control" data-setting-key="Email.FromAddress" value="@Model.Get("Email.FromAddress")" /></div>
+                        <div class="col-md-6"><label class="form-label">Digest Recipients (comma-separated)</label>
+                            <input type="text" class="form-control" data-setting-key="Email.DigestRecipients" value="@Model.Get("Email.DigestRecipients")" /></div>
+                        <div class="col-md-3"><label class="form-label">Digest Hour (UTC)</label>
+                            <input type="number" min="0" max="23" class="form-control" data-setting-key="Email.DigestHour" value="@Model.Get("Email.DigestHour", "7")" /></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colEmail')">Save Email</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Branding ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colBranding">Branding</button></h2>
+            <div id="colBranding" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">App Name</label>
+                            <input type="text" class="form-control" data-setting-key="Branding:AppName" value="@Model.Get("Branding:AppName", "frcastr")" /></div>
+                        <div class="col-md-3"><label class="form-label">Primary Color</label>
+                            <input type="color" class="form-control form-control-color" data-setting-key="Branding:PrimaryColor" value="@Model.Get("Branding:PrimaryColor", "#0d6efd")" /></div>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colBranding')">Save Branding</button></div>
+                </div>
+            </div>
+        </div>
+
+        @* ── Auth ── *@
+        <div class="accordion-item">
+            <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colAuth">Auth</button></h2>
+            <div id="colAuth" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                <div class="accordion-body">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="localAccounts" data-setting-key="Auth.LocalAccountsEnabled" @(Model.Get("Auth.LocalAccountsEnabled", "true") == "true" ? "checked" : "") />
+                        <label class="form-check-label" for="localAccounts">Enable local account login</label>
+                    </div>
+                    <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colAuth')">Save Auth</button></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+@section Scripts {
+<script>
+async function saveSection(colId) {
+    const col = document.getElementById(colId);
+    if (!col) return;
+    const inputs = col.querySelectorAll('[data-setting-key]');
+    const promises = Array.from(inputs).map(el => {
+        const key = el.dataset.settingKey;
+        const value = el.type === 'checkbox' ? el.checked.toString() : el.value;
+        return fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key, value })
+        });
+    });
+    try {
+        const results = await Promise.all(promises);
+        const ok = results.every(r => r.ok);
+        if (ok) {
+            new bootstrap.Toast(document.getElementById('settingsToast')).show();
+        } else {
+            document.getElementById('errorToastMsg').textContent = 'Some settings could not be saved.';
+            new bootstrap.Toast(document.getElementById('errorToast')).show();
+        }
+    } catch (e) {
+        document.getElementById('errorToastMsg').textContent = 'Network error saving settings.';
+        new bootstrap.Toast(document.getElementById('errorToast')).show();
+    }
+}
+</script>
+}

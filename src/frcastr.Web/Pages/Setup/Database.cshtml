@@ -1,0 +1,74 @@
+@page
+@model frcastr.Web.Pages.Setup.DatabaseModel
+@{
+    ViewData["Title"] = "Step 1: Database";
+}
+
+<div class="setup-step-header text-center mb-4">
+    <div class="step-indicator">
+        <div class="step active">1</div>
+        <div class="step">2</div>
+        <div class="step">3</div>
+        <div class="step">4</div>
+        <div class="step">5</div>
+        <div class="step">6</div>
+    </div>
+    <h4>Database Connection</h4>
+    <p class="text-muted small">Configure the SQL Server database for frcastr.</p>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger d-none" id="validationSummary"></div>
+
+            @if (!string.IsNullOrEmpty(Model.TestMessage))
+            {
+                <div class="alert @(Model.TestSuccess ? "alert-success" : "alert-danger")">
+                    @Model.TestMessage
+                </div>
+            }
+
+            <div class="mb-3">
+                <label asp-for="Input.Server" class="form-label">SQL Server <span class="text-danger">*</span></label>
+                <input asp-for="Input.Server" class="form-control" placeholder=".\SQLEXPRESS" />
+                <span asp-validation-for="Input.Server" class="text-danger small"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Database" class="form-label">Database Name <span class="text-danger">*</span></label>
+                <input asp-for="Input.Database" class="form-control" placeholder="frcastr" />
+                <span asp-validation-for="Input.Database" class="text-danger small"></span>
+            </div>
+
+            <div class="form-check mb-3">
+                <input asp-for="Input.UseWindowsAuth" class="form-check-input" id="winAuth" onchange="toggleCredentials()" />
+                <label class="form-check-label" for="winAuth">Use Windows Authentication</label>
+            </div>
+
+            <div id="sqlCreds" style="display:@(Model.Input.UseWindowsAuth ? "none" : "block")">
+                <div class="mb-3">
+                    <label asp-for="Input.Username" class="form-label">SQL Username</label>
+                    <input asp-for="Input.Username" class="form-control" autocomplete="username" />
+                </div>
+                <div class="mb-3">
+                    <label asp-for="Input.Password" class="form-label">SQL Password</label>
+                    <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" />
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 justify-content-between">
+                <button type="submit" asp-page-handler="Test" class="btn btn-outline-secondary">Test Connection</button>
+                <button type="submit" class="btn btn-primary">Next →</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function toggleCredentials() {
+    const win = document.getElementById('winAuth').checked;
+    document.getElementById('sqlCreds').style.display = win ? 'none' : 'block';
+}
+</script>
+}

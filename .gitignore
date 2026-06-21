@@ -1,1 +1,36 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 
+# Visual Studio
+.vs/
+*.rsuser
+.vscode/
+
+# JetBrains Rider
+.idea/
+
+# Published output
+publish/
+out/
+
+# Generated / secrets
+setup-generated.json
+appsettings.*.json
+!appsettings.Development.json
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini

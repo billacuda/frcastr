@@ -1,0 +1,61 @@
+@page
+@model frcastr.Web.Pages.Setup.EmailModel
+@{
+    ViewData["Title"] = "Step 4: Email";
+}
+
+<div class="setup-step-header text-center mb-4">
+    <div class="step-indicator">
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step done">✓</div>
+        <div class="step active">4</div>
+        <div class="step">5</div>
+        <div class="step">6</div>
+    </div>
+    <h4>Email Settings <span class="badge bg-secondary fs-6">Optional</span></h4>
+    <p class="text-muted small">Configure outbound email for alerts and daily digests.</p>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body">
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger"></div>
+
+            <div class="mb-3">
+                <label asp-for="Input.SmtpHost" class="form-label">SMTP Host</label>
+                <input asp-for="Input.SmtpHost" class="form-control" placeholder="smtp.example.com" />
+            </div>
+            <div class="row">
+                <div class="col mb-3">
+                    <label asp-for="Input.Port" class="form-label">Port</label>
+                    <input asp-for="Input.Port" type="number" class="form-control" />
+                </div>
+                <div class="col mb-3 d-flex align-items-end">
+                    <div class="form-check mb-2">
+                        <input asp-for="Input.UseSsl" class="form-check-input" id="useSsl" />
+                        <label class="form-check-label" for="useSsl">Use SSL/TLS</label>
+                    </div>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Username" class="form-label">Username</label>
+                <input asp-for="Input.Username" class="form-control" autocomplete="username" />
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Password" class="form-label">Password</label>
+                <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" />
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.FromAddress" class="form-label">From Address</label>
+                <input asp-for="Input.FromAddress" type="email" class="form-control" placeholder="frcastr@example.com" />
+                <span asp-validation-for="Input.FromAddress" class="text-danger small"></span>
+            </div>
+
+            <div class="d-flex gap-2 justify-content-between">
+                <button type="submit" asp-page-handler="Skip" class="btn btn-outline-secondary">Skip</button>
+                <button type="submit" class="btn btn-primary">Next →</button>
+            </div>
+        </form>
+    </div>
+</div>
