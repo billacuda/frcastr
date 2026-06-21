@@ -3,6 +3,8 @@
 
 Personal weather station web application. Accepts pushed sensor data and pulls from external providers, displays live readings on a customizable dashboard, and archives everything to SQL Server.
 
+Release ![0.1.0](CHANGELOG.md)
+
 ## Stack
 
 - ASP.NET Core 10, Razor Pages, MVC API controllers
