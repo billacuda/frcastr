@@ -14,7 +14,9 @@ public class ForecastRefreshBackgroundService(
     IServiceScopeFactory scopeFactory,
     ILogger<ForecastRefreshBackgroundService> logger) : BackgroundService
 {
-    private static readonly TimeSpan TickInterval = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan TickInterval      = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan DailyRefreshAfter  = TimeSpan.FromHours(3);
+    private static readonly TimeSpan HourlyRefreshAfter = TimeSpan.FromMinutes(30);
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -53,15 +55,29 @@ public class ForecastRefreshBackgroundService(
         foreach (var source in sources)
         {
             var latestCache = await db.ForecastCaches
-                .Where(fc => fc.SourceId == source.Id)
+                .Where(fc => fc.SourceId == source.Id && !fc.IsHourly)
                 .OrderByDescending(fc => fc.FetchedAt)
                 .FirstOrDefaultAsync(ct);
 
-            if (latestCache is not null && latestCache.ValidUntil > now.AddMinutes(5))
-                continue; // still fresh
+            var latestHourly = await db.ForecastCaches
+                .Where(fc => fc.SourceId == source.Id && fc.IsHourly)
+                .OrderByDescending(fc => fc.FetchedAt)
+                .FirstOrDefaultAsync(ct);
+
+            // Refresh based on age of last successful fetch, not on ValidUntil.
+            // ValidUntil stays long (48 h) as a display-staleness guard; it must not
+            // be used to decide when to re-fetch or hourly data gets stuck for 48 h.
+            var dailyNeedsRefresh  = latestCache   is null || (now - latestCache.FetchedAt)   >= DailyRefreshAfter;
+            var hourlyNeedsRefresh = latestHourly  is null || (now - latestHourly.FetchedAt)  >= HourlyRefreshAfter;
+
+            if (!dailyNeedsRefresh && !hourlyNeedsRefresh) continue;
 
             var provider = ExtractProvider(source.Config);
-            if (provider is null && !string.IsNullOrWhiteSpace(source.Url))
+            if (provider is null && source.Url?.Contains("api.weather.gov", StringComparison.OrdinalIgnoreCase) == true)
+                provider = "nws";
+            else if (provider is null && source.Url?.Contains("api.open-meteo.com", StringComparison.OrdinalIgnoreCase) == true)
+                provider = "openmeteo";
+            else if (provider is null && !string.IsNullOrWhiteSpace(source.Url))
                 provider = "generic-json";
             var adapter = provider is not null
                 ? adapters.FirstOrDefault(a => a.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase))
@@ -75,23 +91,59 @@ public class ForecastRefreshBackgroundService(
 
             try
             {
-                var periods = await adapter.FetchAsync(source, ct);
-                var json = JsonSerializer.Serialize(periods, JsonOpts);
-
-                db.ForecastCaches.Add(new ForecastCache
+                // Fetch daily forecast
+                if (dailyNeedsRefresh)
                 {
-                    SourceId = source.Id,
-                    FetchedAt = now,
-                    ForecastJson = json,
-                    ValidUntil = now.AddHours(cacheRetentionHours)
-                });
+                    var periods = await adapter.FetchAsync(source, ct);
+                    if (periods.Count > 0)
+                    {
+                        var json = JsonSerializer.Serialize(periods, JsonOpts);
+                        db.ForecastCaches.Add(new ForecastCache
+                        {
+                            SourceId     = source.Id,
+                            FetchedAt    = now,
+                            ForecastJson = json,
+                            ValidUntil   = now.AddHours(cacheRetentionHours),
+                            IsHourly     = false
+                        });
+                        logger.LogDebug("Refreshed daily forecast for source {SourceId} ({Count} periods).",
+                            source.Id, periods.Count);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Daily forecast fetch returned 0 periods for source {SourceId}; skipping cache.",
+                            source.Id);
+                    }
+                }
+
+                // Fetch hourly forecast if the adapter supports it
+                if (hourlyNeedsRefresh && adapter is IHourlyForecastAdapter hourlyAdapter)
+                {
+                    var hourly = await hourlyAdapter.FetchHourlyAsync(source, ct);
+                    if (hourly.Count > 0)
+                    {
+                        var hourlyJson = JsonSerializer.Serialize(hourly, JsonOpts);
+                        db.ForecastCaches.Add(new ForecastCache
+                        {
+                            SourceId     = source.Id,
+                            FetchedAt    = now,
+                            ForecastJson = hourlyJson,
+                            ValidUntil   = now.AddHours(cacheRetentionHours),
+                            IsHourly     = true
+                        });
+                        logger.LogDebug("Refreshed hourly forecast for source {SourceId} ({Count} periods).",
+                            source.Id, hourly.Count);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Hourly forecast fetch returned 0 periods for source {SourceId}; skipping cache.",
+                            source.Id);
+                    }
+                }
 
                 source.LastPolledAt = now;
                 source.LastError = null;
                 await db.SaveChangesAsync(ct);
-
-                logger.LogDebug("Refreshed forecast for source {SourceId} ({Count} periods).",
-                    source.Id, periods.Count);
             }
             catch (Exception ex)
             {

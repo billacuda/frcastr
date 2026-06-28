@@ -5,7 +5,7 @@
     ViewData["DashboardPage"] = true;
 }
 
-<div id="dashboardWrapper" class="px-2 py-2">
+<div id="dashboardWrapper" class="px-2 pt-2">
     <div id="dashboard-grid" class="grid-stack"></div>
 </div>
 
@@ -19,7 +19,7 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">Widget Type</label>
-                    <select class="form-select" id="awType">
+                    <select class="form-select" id="awType" onchange="onAwTypeChange()">
                         <option value="0">Date / Time</option>
                         <option value="1">Temperature (Outdoor)</option>
                         <option value="2">Temperature (Indoor)</option>
@@ -28,7 +28,7 @@
                         <option value="5">Pressure</option>
                         <option value="6">Wind</option>
                         <option value="7">Weather Animation</option>
-                        <option value="8">Forecast</option>
+                        <option value="8">Daily Forecast</option>
                         <option value="9">Moon</option>
                         <option value="10">Custom</option>
                         <option value="11">Sunrise / Sunset</option>
@@ -38,20 +38,146 @@
                         <option value="15">Pressure Trend</option>
                         <option value="16">Air Quality</option>
                         <option value="17">Radar</option>
+                        <option value="18">Hourly Forecast</option>
                     </select>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Title</label>
                     <input type="text" class="form-control" id="awTitle" />
                 </div>
-                <div class="mb-0">
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-primary"          id="awSimpleBtn" onclick="setAwMode('simple')">Simple</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="awJsonBtn"   onclick="setAwMode('json')">JSON</button>
+                </div>
+                <div id="awSimplePane">
+                    <div id="awSimpleChannel" style="display:none" class="mb-3">
+                        <label class="form-label">Channel</label>
+                        <select class="form-select" id="awChannelPick"></select>
+                    </div>
+                    <div id="awSimpleWind" style="display:none">
+                        <div class="mb-2"><label class="form-label">Speed Channel</label><select class="form-select" id="awWindSpeed"></select></div>
+                        <div class="mb-2"><label class="form-label">Direction Channel</label><select class="form-select" id="awWindDir"></select></div>
+                        <div class="mb-3"><label class="form-label">Gust Channel <span class="text-body-secondary small">(optional)</span></label><select class="form-select" id="awWindGust"></select></div>
+                    </div>
+                    <div id="awSimpleForecast" style="display:none" class="mb-2">
+                        <div class="mb-2"><label class="form-label">Periods to show</label>
+                            <input type="number" class="form-control" id="awPeriods" min="1" max="14" value="5" style="max-width:120px" /></div>
+                        <p class="text-body-secondary small mb-0">Forecast data comes from all enabled forecast sources in Admin → Data Sources.</p>
+                    </div>
+                    <div id="awSimpleRadar" style="display:none">
+                        <div class="mb-2"><label class="form-label">Tile URL <span class="text-body-secondary small">(leave blank for default NOAA radar)</span></label>
+                            <input type="text" class="form-control font-monospace small" id="awRadarUrl" placeholder="https://.../tile/{z}/{y}/{x}" /></div>
+                        <div class="row g-2 mb-2">
+                            <div class="col"><label class="form-label">Lat</label><input type="number" step="any" class="form-control" id="awRadarLat" value="39.5" /></div>
+                            <div class="col"><label class="form-label">Lon</label><input type="number" step="any" class="form-control" id="awRadarLon" value="-98.35" /></div>
+                            <div class="col"><label class="form-label">Zoom</label><input type="number" min="1" max="18" class="form-control" id="awRadarZoom" value="5" /></div>
+                            <div class="col"><label class="form-label">Opacity</label><input type="number" min="0" max="1" step="0.1" class="form-control" id="awRadarOpacity" value="0.6" /></div>
+                        </div>
+                    </div>
+                    <div id="awSimpleDatetime" style="display:none" class="mb-3">
+                        <label class="form-label">Time Format</label>
+                        <select class="form-select" id="awTimeFormat">
+                            <option value="12h">12-hour (AM/PM)</option>
+                            <option value="24h">24-hour</option>
+                        </select>
+                    </div>
+                    <div id="awSimpleNone" style="display:none">
+                        <p class="text-body-secondary small mb-0">This widget type has no configurable options.</p>
+                    </div>
+                </div>
+                <div id="awJsonPane" style="display:none">
                     <label class="form-label">Config (JSON, optional)</label>
                     <textarea class="form-control font-monospace small" id="awConfig" rows="3" placeholder='{"channel": "temperature.outdoor"}'></textarea>
+                </div>
+                <hr />
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="awColorEnabled" onchange="onColorToggle('aw')" />
+                    <label class="form-check-label" for="awColorEnabled">Custom text color</label>
+                </div>
+                <div id="awColorRow" style="display:none" class="d-flex align-items-center gap-2">
+                    <input type="color" class="form-control form-control-color" id="awColor" value="#0d6efd" title="Widget text color" />
+                    <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-primary" onclick="addWidget()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editWidgetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Widget</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="ewId" />
+                <input type="hidden" id="ewType" />
+                <div class="mb-3">
+                    <label class="form-label">Title</label>
+                    <input type="text" class="form-control" id="ewTitle" readonly />
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-primary"          id="ewSimpleBtn" onclick="setEwMode('simple')">Simple</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ewJsonBtn"   onclick="setEwMode('json')">JSON</button>
+                </div>
+                <div id="ewSimplePane">
+                    <div id="ewSimpleChannel" style="display:none" class="mb-3">
+                        <label class="form-label">Channel</label>
+                        <select class="form-select" id="ewChannelPick"></select>
+                    </div>
+                    <div id="ewSimpleWind" style="display:none">
+                        <div class="mb-2"><label class="form-label">Speed Channel</label><select class="form-select" id="ewWindSpeed"></select></div>
+                        <div class="mb-2"><label class="form-label">Direction Channel</label><select class="form-select" id="ewWindDir"></select></div>
+                        <div class="mb-3"><label class="form-label">Gust Channel <span class="text-body-secondary small">(optional)</span></label><select class="form-select" id="ewWindGust"></select></div>
+                    </div>
+                    <div id="ewSimpleForecast" style="display:none" class="mb-2">
+                        <div class="mb-2"><label class="form-label">Periods to show</label>
+                            <input type="number" class="form-control" id="ewPeriods" min="1" max="14" value="5" style="max-width:120px" /></div>
+                        <p class="text-body-secondary small mb-0">Forecast data comes from all enabled forecast sources in Admin → Data Sources.</p>
+                    </div>
+                    <div id="ewSimpleRadar" style="display:none">
+                        <div class="mb-2"><label class="form-label">Tile URL <span class="text-body-secondary small">(leave blank for default NOAA radar)</span></label>
+                            <input type="text" class="form-control font-monospace small" id="ewRadarUrl" placeholder="https://.../tile/{z}/{y}/{x}" /></div>
+                        <div class="row g-2 mb-2">
+                            <div class="col"><label class="form-label">Lat</label><input type="number" step="any" class="form-control" id="ewRadarLat" value="39.5" /></div>
+                            <div class="col"><label class="form-label">Lon</label><input type="number" step="any" class="form-control" id="ewRadarLon" value="-98.35" /></div>
+                            <div class="col"><label class="form-label">Zoom</label><input type="number" min="1" max="18" class="form-control" id="ewRadarZoom" value="5" /></div>
+                            <div class="col"><label class="form-label">Opacity</label><input type="number" min="0" max="1" step="0.1" class="form-control" id="ewRadarOpacity" value="0.6" /></div>
+                        </div>
+                    </div>
+                    <div id="ewSimpleDatetime" style="display:none" class="mb-3">
+                        <label class="form-label">Time Format</label>
+                        <select class="form-select" id="ewTimeFormat">
+                            <option value="12h">12-hour (AM/PM)</option>
+                            <option value="24h">24-hour</option>
+                        </select>
+                    </div>
+                    <div id="ewSimpleNone" style="display:none">
+                        <p class="text-body-secondary small mb-0">This widget type has no configurable options.</p>
+                    </div>
+                </div>
+                <div id="ewJsonPane" style="display:none">
+                    <label class="form-label">Config (JSON)</label>
+                    <textarea class="form-control font-monospace small" id="ewConfig" rows="6" placeholder='{"channel": "temperature.outdoor"}'></textarea>
+                </div>
+                <hr />
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="ewColorEnabled" onchange="onColorToggle('ew')" />
+                    <label class="form-check-label" for="ewColorEnabled">Custom text color</label>
+                </div>
+                <div id="ewColorRow" style="display:none" class="d-flex align-items-center gap-2">
+                    <input type="color" class="form-control form-control-color" id="ewColor" value="#0d6efd" title="Widget text color" />
+                    <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEditWidget()">Save</button>
             </div>
         </div>
     </div>
@@ -63,7 +189,12 @@ window.frcastrConfig = {
     kioskMode: @(Model.KioskMode ? "true" : "false"),
     theme: '@Model.Theme',
     isAuthenticated: @(User.Identity?.IsAuthenticated == true ? "true" : "false"),
-    isAdmin: @(User.IsInRole("Administrator") ? "true" : "false")
+    isAdmin: @(User.IsInRole("Administrator") ? "true" : "false"),
+    windUnit: '@Model.WindUnit',
+    pressureUnit: '@Model.PressureUnit',
+    rainUnit: '@Model.RainUnit',
+    stationLat: '@Model.StationLat',
+    stationLon: '@Model.StationLon'
 };
 </script>
 

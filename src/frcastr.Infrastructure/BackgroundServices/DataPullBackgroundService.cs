@@ -109,7 +109,9 @@ public class DataPullBackgroundService(
         IReadOnlyList<IDataPullAdapter> adapters, DataSource source)
     {
         var providerHint = ExtractProvider(source.Config);
-        if (providerHint is null && !string.IsNullOrWhiteSpace(source.Url))
+        if (providerHint is null && source.Url?.Contains("api.open-meteo.com", StringComparison.OrdinalIgnoreCase) == true)
+            providerHint = "openmeteo";
+        else if (providerHint is null && !string.IsNullOrWhiteSpace(source.Url))
             providerHint = "generic";
         if (providerHint is not null)
             return adapters.FirstOrDefault(a =>

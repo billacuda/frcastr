@@ -19,9 +19,29 @@ public class AdminController(
     ApplicationDbContext db,
     UserManager<ApplicationUser> userManager,
     RoleManager<IdentityRole> roleManager,
-    IAuditService audit) : ControllerBase
+    IAuditService audit,
+    IWebHostEnvironment webEnv,
+    ISettingsService settings,
+    IDataSourceTestService dataSourceTester,
+    IWeatherDataService weatherData) : ControllerBase
 {
-    private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+    // ── Channels ──────────────────────────────────────────────────────────────
+
+    [HttpGet("channels")]
+    public async Task<IActionResult> GetChannels(CancellationToken ct)
+    {
+        var readings = await weatherData.GetCurrentReadingsAsync(ct);
+        var result = readings.Values
+            .OrderBy(r => r.ChannelName)
+            .Select(r => new
+            {
+                name        = r.ChannelName,
+                value       = (double?)r.Value,
+                unit        = r.Unit,
+                lastUpdated = r.Timestamp
+            });
+        return Ok(result);
+    }
 
     // ── Data Sources ──────────────────────────────────────────────────────────
 
@@ -98,6 +118,15 @@ public class AdminController(
         return Ok(new { source.IsEnabled });
     }
 
+    [HttpPost("datasources/{id:int}/test")]
+    public async Task<IActionResult> TestDataSource(int id, CancellationToken ct)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(15));
+        var result = await dataSourceTester.TestAsync(id, timeoutCts.Token);
+        return Ok(result);
+    }
+
     [HttpPost("datasources/{id:int}/rotate-key")]
     public async Task<IActionResult> RotateKey(int id, CancellationToken ct)
     {
@@ -123,6 +152,49 @@ public class AdminController(
             entityType: "DataSource", entityId: id.ToString(), entityName: source.Name, ct: ct);
 
         return Ok(new { plainKey });
+    }
+
+    // ── Branding ──────────────────────────────────────────────────────────────
+
+    [HttpPost("branding/logo")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadLogo(IFormFile file, CancellationToken ct)
+    {
+        if (file is null || file.Length == 0) return BadRequest("No file provided.");
+
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp" };
+        if (!allowed.Contains(ext)) return BadRequest("Invalid file type.");
+
+        var uploadsDir = Path.Combine(webEnv.ContentRootPath, "uploads");
+        Directory.CreateDirectory(uploadsDir);
+
+        var fileName = "logo" + ext;
+        var filePath = Path.Combine(uploadsDir, fileName);
+        await using var stream = System.IO.File.Create(filePath);
+        await file.CopyToAsync(stream, ct);
+
+        var logoUrl = "/uploads/" + fileName;
+        await settings.UpsertAsync("Branding.Logo", logoUrl, modifiedBy: UserName(), ct: ct);
+
+        await audit.LogAsync("Branding.LogoUploaded",
+            userId: UserId(), userName: UserName(),
+            entityType: "Setting", entityId: "Branding.Logo", entityName: "Logo", newValue: logoUrl, ct: ct);
+
+        return Ok(new { url = logoUrl });
+    }
+
+    [HttpDelete("branding/logo")]
+    public async Task<IActionResult> DeleteLogo(CancellationToken ct)
+    {
+        var logoUrl = await settings.GetAsync("Branding.Logo", ct);
+        if (!string.IsNullOrEmpty(logoUrl))
+        {
+            var filePath = Path.Combine(webEnv.ContentRootPath, logoUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+            if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+        }
+        await settings.UpsertAsync("Branding.Logo", "", modifiedBy: UserName(), ct: ct);
+        return NoContent();
     }
 
     // ── Widgets ───────────────────────────────────────────────────────────────

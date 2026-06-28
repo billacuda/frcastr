@@ -1,10 +1,20 @@
+using frcastr.Core.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace frcastr.Web.Pages;
 
 [AllowAnonymous]
-public class HistoryModel : PageModel
+public class HistoryModel(ISettingsService settings) : PageModel
 {
-    public void OnGet() { }
+    public string WindUnit { get; private set; } = "kmh";
+    public string PressureUnit { get; private set; } = "hPa";
+    public string RainUnit { get; private set; } = "mm";
+
+    public async Task OnGetAsync(CancellationToken ct = default)
+    {
+        WindUnit = await settings.GetAsync("Display.WindUnit", ct) ?? "kmh";
+        PressureUnit = await settings.GetAsync("Display.PressureUnit", ct) ?? "hPa";
+        RainUnit = await settings.GetAsync("Display.RainUnit", ct) ?? "mm";
+    }
 }

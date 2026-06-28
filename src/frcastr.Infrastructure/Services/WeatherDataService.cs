@@ -108,6 +108,7 @@ public class WeatherDataService(
         CancellationToken ct = default)
     {
         var channelList = channels.ToList();
+        var allChannels = !channelList.Any();
         var rawRetention = await settings.GetIntAsync("Weather.RawRetentionDays", 30, ct);
         var hourlyRetention = await settings.GetIntAsync("Weather.HourlyRetentionDays", 365, ct);
 
@@ -123,14 +124,14 @@ public class WeatherDataService(
         if (rawStart < end)
         {
             var rows = await dbContext.WeatherReadings
-                .Where(r => channelList.Contains(r.ChannelName)
+                .Where(r => (allChannels || channelList.Contains(r.ChannelName))
                          && r.Timestamp >= rawStart && r.Timestamp <= end)
                 .OrderBy(r => r.Timestamp)
                 .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId })
                 .ToListAsync(ct);
 
             rawPoints.AddRange(rows.Select(r =>
-                new HistoryDataPoint(r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId)));
+                new HistoryDataPoint(DateTime.SpecifyKind(r.Timestamp, DateTimeKind.Utc), r.ChannelName, r.Value, r.Unit, r.SourceId)));
         }
 
         // Hourly tier: [max(start, hourlyCutoff), min(end, rawCutoff)]
@@ -140,14 +141,14 @@ public class WeatherDataService(
         {
             var rows = await dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Hourly
-                         && channelList.Contains(r.ChannelName)
+                         && (allChannels || channelList.Contains(r.ChannelName))
                          && r.PeriodStart >= hourlyStart && r.PeriodStart < hourlyEnd)
                 .OrderBy(r => r.PeriodStart)
                 .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId })
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
-                new AggregateDataPoint(r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
+                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
         }
 
         // Daily tier: [start, min(end, hourlyCutoff)]
@@ -156,14 +157,14 @@ public class WeatherDataService(
         {
             var rows = await dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Daily
-                         && channelList.Contains(r.ChannelName)
+                         && (allChannels || channelList.Contains(r.ChannelName))
                          && r.PeriodStart >= start && r.PeriodStart < dailyEnd)
                 .OrderBy(r => r.PeriodStart)
                 .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId })
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
-                new AggregateDataPoint(r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
+                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
         }
 
         return new HistoryResult(rawPoints, aggPoints);

@@ -6,6 +6,11 @@
         return params.get('dash') || 'Default';
     }
 
+    function dashCopyBtn(name) {
+        return '<button class="btn btn-link btn-sm text-body-secondary p-0 pe-1" title="Copy dashboard" ' +
+            "onclick='copyDashboard(event," + JSON.stringify(name) + ")'>&#x2398;</button>";
+    }
+
     function buildMenu(names) {
         var menu = document.getElementById('dashboardMenu');
         if (!menu) return;
@@ -13,14 +18,20 @@
         var current = getCurrentDash();
         var others = names.filter(function (n) { return n !== 'Default'; }).sort();
 
-        var html = '<li><a class="dropdown-item' + (current === 'Default' ? ' active' : '') +
-            '" href="/?dash=Default">Default</a></li>';
+        var html = '<li class="d-flex align-items-center">' +
+            '<a class="dropdown-item flex-grow-1' + (current === 'Default' ? ' active' : '') +
+            '" href="/?dash=Default">Default</a>' +
+            dashCopyBtn('Default') + '</li>';
 
         if (others.length) {
             html += '<li><hr class="dropdown-divider"></li>';
             others.forEach(function (n) {
-                html += '<li><a class="dropdown-item' + (current === n ? ' active' : '') +
-                    '" href="/?dash=' + encodeURIComponent(n) + '">' + escHtml(n) + '</a></li>';
+                html += '<li class="d-flex align-items-center">' +
+                    '<a class="dropdown-item flex-grow-1' + (current === n ? ' active' : '') +
+                    '" href="/?dash=' + encodeURIComponent(n) + '">' + escHtml(n) + '</a>' +
+                    dashCopyBtn(n) +
+                    '<button class="btn btn-link btn-sm text-danger p-0 pe-2" title="Delete dashboard" ' +
+                    "onclick='deleteDashboard(event," + JSON.stringify(n) + ")'>&times;</button></li>";
             });
         }
 
@@ -64,6 +75,39 @@
             .then(function (names) { buildMenu(Array.isArray(names) ? names : []); })
             .catch(function () {});
     }
+
+    window.copyDashboard = function (e, name) {
+        e.preventDefault();
+        e.stopPropagation();
+        var newName = prompt('Copy "' + name + '" to new dashboard name:');
+        if (!newName || !newName.trim()) return;
+        newName = newName.trim();
+        fetch('/api/dashboard/copy?from=' + encodeURIComponent(name) + '&to=' + encodeURIComponent(newName), { method: 'POST' })
+            .then(function (r) {
+                if (r.ok) {
+                    window.location.href = '/?dash=' + encodeURIComponent(newName);
+                } else {
+                    r.text().then(function (t) { alert('Could not copy dashboard: ' + t); });
+                }
+            })
+            .catch(function () { alert('Could not copy dashboard.'); });
+    };
+
+    window.deleteDashboard = function (e, name) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!confirm('Delete dashboard "' + name + '" and all its widgets?')) return;
+        fetch('/api/dashboard?name=' + encodeURIComponent(name), { method: 'DELETE' })
+            .then(function (r) {
+                if (r.ok) {
+                    localStorage.removeItem('frcastr-last-dash');
+                    window.location.href = '/';
+                } else {
+                    r.text().then(function (t) { alert('Could not delete dashboard: ' + t); });
+                }
+            })
+            .catch(function () { alert('Could not delete dashboard.'); });
+    };
 
     function escHtml(s) {
         return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

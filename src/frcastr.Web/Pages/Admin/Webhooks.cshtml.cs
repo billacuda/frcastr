@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using frcastr.Core.Entities;
 using frcastr.Core.Enums;
 using frcastr.Infrastructure.Data;
@@ -16,4 +18,9 @@ public class WebhooksModel(ApplicationDbContext db) : PageModel
     {
         Webhooks = await db.WebhookAlerts.OrderBy(w => w.Name).ToListAsync(ct);
     }
+
+    public static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 }

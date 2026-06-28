@@ -217,6 +217,7 @@ try {
         $PublishDir, $DestinationPath,
         '/MIR',
         '/XF', 'setup-generated.json', 'appsettings.Production.json',
+        '/XD', 'uploads',
         '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS'
     )
     robocopy @rcArgs

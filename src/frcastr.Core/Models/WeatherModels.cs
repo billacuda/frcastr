@@ -10,7 +10,8 @@ public record SolarInfo(
     DateTimeOffset? GoldenHourEveningStart,
     TimeSpan DayLength);
 
-public record MoonPhaseInfo(double Phase, string PhaseName, double Illumination, string Icon);
+public record MoonPhaseInfo(double Phase, string PhaseName, double Illumination, string Icon,
+    DateTimeOffset? Moonrise = null, DateTimeOffset? Moonset = null);
 
 public record CurrentReading(
     string ChannelName,

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using frcastr.Core.Entities;
 using frcastr.Core.Interfaces;
 using frcastr.Core.Models;
@@ -11,17 +12,68 @@ namespace frcastr.Infrastructure.Adapters;
 public class NwsAdapter(
     IHttpClientFactory httpClientFactory,
     ISettingsService settings,
-    ILogger<NwsAdapter> logger) : IForecastAdapter
+    ILogger<NwsAdapter> logger) : IForecastAdapter, IHourlyForecastAdapter
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
+    private static readonly Regex PointsUrlPattern =
+        new(@"/points/(-?\d+\.?\d*),(-?\d+\.?\d*)", RegexOptions.None);
 
     public string Provider => "nws";
 
     public async Task<IReadOnlyList<ForecastPeriod>> FetchAsync(DataSource source,
         CancellationToken ct = default)
     {
-        string? lat, lon;
+        var (points, http) = await GetPointsAsync(source, ct);
+        if (points is null) return [];
 
+        var forecastUrl = points.Properties?.Forecast;
+        if (string.IsNullOrWhiteSpace(forecastUrl))
+        {
+            logger.LogWarning("NWS adapter: no forecast URL returned.");
+            return [];
+        }
+
+        try
+        {
+            var forecast = await http.GetFromJsonAsync<NwsForecastResponse>(forecastUrl, JsonOpts, ct);
+            return forecast?.Properties?.Periods.Select(ParsePeriod).ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "NWS adapter daily fetch failed for source {SourceId}.", source.Id);
+            return [];
+        }
+    }
+
+    public async Task<IReadOnlyList<ForecastPeriod>> FetchHourlyAsync(DataSource source,
+        CancellationToken ct = default)
+    {
+        var (points, http) = await GetPointsAsync(source, ct);
+        if (points is null) return [];
+
+        var hourlyUrl = points.Properties?.ForecastHourly;
+        if (string.IsNullOrWhiteSpace(hourlyUrl))
+        {
+            logger.LogWarning("NWS adapter: no hourly forecast URL returned.");
+            return [];
+        }
+
+        try
+        {
+            var forecast = await http.GetFromJsonAsync<NwsForecastResponse>(hourlyUrl, JsonOpts, ct);
+            return forecast?.Properties?.Periods.Select(ParsePeriod).ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "NWS adapter hourly fetch failed for source {SourceId}.", source.Id);
+            return [];
+        }
+    }
+
+    private async Task<(NwsPointsResponse? Points, HttpClient Http)> GetPointsAsync(
+        DataSource source, CancellationToken ct)
+    {
+        string? lat, lon;
         if (!string.IsNullOrWhiteSpace(source.Config))
         {
             var cfg = JsonSerializer.Deserialize<Dictionary<string, string>>(source.Config, JsonOpts);
@@ -36,35 +88,27 @@ public class NwsAdapter(
 
         if (string.IsNullOrWhiteSpace(lat) || string.IsNullOrWhiteSpace(lon))
         {
-            logger.LogWarning("NWS adapter: Station.Latitude/Longitude not configured.");
-            return [];
+            var m = PointsUrlPattern.Match(source.Url ?? "");
+            if (m.Success) { lat = m.Groups[1].Value; lon = m.Groups[2].Value; }
         }
 
+        if (string.IsNullOrWhiteSpace(lat) || string.IsNullOrWhiteSpace(lon))
+        {
+            logger.LogWarning("NWS adapter: Station.Latitude/Longitude not configured.");
+            return (null, null!);
+        }
+
+        var http = httpClientFactory.CreateClient("nws");
         try
         {
-            var http = httpClientFactory.CreateClient("nws");
-
             var points = await http.GetFromJsonAsync<NwsPointsResponse>(
                 $"/points/{lat},{lon}", JsonOpts, ct);
-
-            var forecastUrl = points?.Properties?.Forecast;
-            if (string.IsNullOrWhiteSpace(forecastUrl))
-            {
-                logger.LogWarning("NWS adapter: no forecast URL returned for {Lat},{Lon}.", lat, lon);
-                return [];
-            }
-
-            var forecast = await http.GetFromJsonAsync<NwsForecastResponse>(
-                forecastUrl, JsonOpts, ct);
-
-            return forecast?.Properties?.Periods
-                .Select(ParsePeriod)
-                .ToList() ?? [];
+            return (points, http);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "NWS adapter fetch failed for source {SourceId}.", source.Id);
-            return [];
+            logger.LogError(ex, "NWS adapter points fetch failed for source {SourceId}.", source.Id);
+            return (null, http);
         }
     }
 
@@ -98,7 +142,8 @@ public class NwsAdapter(
 
     private sealed class NwsPointsProps
     {
-        [JsonPropertyName("forecast")] public string? Forecast { get; init; }
+        [JsonPropertyName("forecast")]       public string? Forecast { get; init; }
+        [JsonPropertyName("forecastHourly")] public string? ForecastHourly { get; init; }
     }
 
     private sealed class NwsForecastResponse

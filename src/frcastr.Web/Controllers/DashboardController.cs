@@ -20,12 +20,10 @@ public class DashboardController(
     [AllowAnonymous]
     public async Task<IActionResult> GetLayout(string dashboard = "Default", CancellationToken ct = default)
     {
-        var userId = GetOptionalUserId();
-
-        var layout = userId is not null
-            ? await db.DashboardLayouts.FirstOrDefaultAsync(l => l.OwnerId == userId && l.Name == dashboard, ct)
-              ?? await db.DashboardLayouts.FirstOrDefaultAsync(l => l.OwnerId == null && l.Name == dashboard, ct)
-            : await db.DashboardLayouts.FirstOrDefaultAsync(l => l.OwnerId == null && l.Name == dashboard, ct);
+        var layout = await db.DashboardLayouts
+            .Where(l => l.Name == dashboard)
+            .OrderBy(l => l.OwnerId == null ? 0 : 1)
+            .FirstOrDefaultAsync(ct);
 
         return Ok(new
         {
@@ -39,17 +37,14 @@ public class DashboardController(
     public async Task<IActionResult> SaveLayout(
         [FromBody] LayoutDto dto, string dashboard = "Default", CancellationToken ct = default)
     {
-        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-
-        var existing = userId is not null
-            ? await db.DashboardLayouts.FirstOrDefaultAsync(l => l.OwnerId == userId && l.Name == dashboard, ct)
-            : await db.DashboardLayouts.FirstOrDefaultAsync(l => l.OwnerId == null  && l.Name == dashboard, ct);
+        var existing = await db.DashboardLayouts
+            .FirstOrDefaultAsync(l => l.OwnerId == null && l.Name == dashboard, ct);
 
         if (existing is null)
         {
             db.DashboardLayouts.Add(new DashboardLayout
             {
-                OwnerId          = userId,
+                OwnerId          = null,
                 Name             = dashboard,
                 LayoutJson       = dto.Desktop ?? "[]",
                 LayoutJsonMobile = dto.Mobile  ?? "[]",
@@ -76,7 +71,7 @@ public class DashboardController(
         var widgets = await db.WidgetDefinitions
             .Where(w => w.IsVisible
                      && w.DashboardName == dashboard
-                     && (w.OwnerId == null || w.OwnerId == userId))
+                     && (userId == null || w.OwnerId == null || w.OwnerId == userId))
             .OrderBy(w => w.SortOrder)
             .ToListAsync(ct);
 
@@ -103,7 +98,7 @@ public class DashboardController(
         var userId = GetOptionalUserId();
 
         var names = await db.WidgetDefinitions
-            .Where(w => w.OwnerId == null || w.OwnerId == userId)
+            .Where(w => userId == null || w.OwnerId == null || w.OwnerId == userId)
             .Select(w => w.DashboardName)
             .Distinct()
             .OrderBy(n => n)
@@ -134,6 +129,62 @@ public class DashboardController(
             });
             await db.SaveChangesAsync(ct);
         }
+
+        return NoContent();
+    }
+
+    [HttpPost("copy")]
+    [Authorize]
+    public async Task<IActionResult> CopyDashboard(string from, string to, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+            return BadRequest("Source and destination names are required.");
+
+        if (from == to)
+            return BadRequest("Source and destination names must differ.");
+
+        var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        var sourceLayout = await db.DashboardLayouts
+            .FirstOrDefaultAsync(l => l.Name == from && (l.OwnerId == null || l.OwnerId == userId), ct);
+
+        var newLayout = new DashboardLayout
+        {
+            OwnerId          = userId,
+            Name             = to,
+            LayoutJson       = sourceLayout?.LayoutJson ?? "[]",
+            LayoutJsonMobile = sourceLayout?.LayoutJsonMobile ?? "[]",
+            UpdatedAt        = DateTime.UtcNow
+        };
+        db.DashboardLayouts.Add(newLayout);
+
+        var sourceWidgets = await db.WidgetDefinitions
+            .Where(w => w.DashboardName == from && (w.OwnerId == null || w.OwnerId == userId))
+            .ToListAsync(ct);
+
+        foreach (var w in sourceWidgets)
+        {
+            db.WidgetDefinitions.Add(new WidgetDefinition
+            {
+                Type          = w.Type,
+                Title         = w.Title,
+                Config        = w.Config,
+                GridX         = w.GridX,
+                GridY         = w.GridY,
+                GridW         = w.GridW,
+                GridH         = w.GridH,
+                SortOrder     = w.SortOrder,
+                IsVisible     = w.IsVisible,
+                OwnerId       = userId,
+                DashboardName = to
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        await audit.LogAsync("Dashboard.Copied",
+            entityType: "DashboardLayout", entityName: to,
+            newValue: $"Copied from '{from}'", ct: ct);
 
         return NoContent();
     }

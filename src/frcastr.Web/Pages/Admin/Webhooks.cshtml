@@ -22,7 +22,7 @@
                 <tbody>
                     @foreach (var w in Model.Webhooks)
                     {
-                        <tr id="wh-@w.Id" data-hook='@System.Text.Json.JsonSerializer.Serialize(w)'>
+                        <tr id="wh-@w.Id" data-hook='@System.Text.Json.JsonSerializer.Serialize(w, WebhooksModel.JsonOpts)'>
                             <td class="fw-semibold">@w.Name</td>
                             <td class="small font-monospace">@w.Channel</td>
                             <td class="small">@w.Operator @w.Threshold @w.Unit</td>

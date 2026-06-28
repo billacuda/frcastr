@@ -107,7 +107,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<ForecastCache>(e =>
         {
-            e.HasIndex(f => new { f.SourceId, f.FetchedAt });
+            e.HasIndex(f => new { f.SourceId, f.IsHourly, f.FetchedAt });
             e.HasOne(f => f.Source).WithMany()
              .HasForeignKey(f => f.SourceId)
              .OnDelete(DeleteBehavior.Cascade);

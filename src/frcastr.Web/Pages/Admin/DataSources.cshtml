@@ -19,7 +19,7 @@
             <tbody id="sourcesBody">
                 @foreach (var s in Model.Sources)
                 {
-                    <tr id="row-@s.Id" data-source='@System.Text.Json.JsonSerializer.Serialize(s)'>
+                    <tr id="row-@s.Id" data-source='@System.Text.Json.JsonSerializer.Serialize(s, DataSourcesModel.JsonOpts)'>
                         <td class="fw-semibold">@s.Name</td>
                         <td><span class="badge text-bg-secondary">@s.Type</span></td>
                         <td>
@@ -35,6 +35,7 @@
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary" onclick="toggleSource(@s.Id)">Toggle</button>
                                 <button class="btn btn-outline-primary"   onclick="openEditModal(@s.Id)">Edit</button>
+                                <button class="btn btn-outline-info"      onclick="testSourceById(@s.Id, '@s.Name')">Test</button>
                                 @if (s.Type == DataSourceType.Push)
                                 {
                                     <button class="btn btn-outline-warning" onclick="rotateKey(@s.Id)">Rotate Key</button>
@@ -75,14 +76,61 @@
                     </div>
                     <div class="col-12" id="urlRow"><label class="form-label">URL</label>
                         <input type="url" class="form-control font-monospace" id="sourceUrl" placeholder="https://example.com/api/data" /></div>
+                    <div class="col-12">
+                        <label class="form-label">Provider preset <span class="text-body-secondary small">(fills the config below)</span></label>
+                        <select class="form-select" id="providerPreset" onchange="applyPreset()">
+                            <option value="">— Choose a provider —</option>
+                            <option value="nws-current">NWS Current Conditions (api.weather.gov)</option>
+                            <option value="nws">NWS Forecast (api.weather.gov)</option>
+                            <option value="openweathermap">OpenWeatherMap (current + forecast)</option>
+                            <option value="weatherapi">WeatherAPI.com (forecast)</option>
+                            <option value="open-meteo-current">Open-Meteo (current conditions)</option>
+                            <option value="open-meteo">Open-Meteo (forecast)</option>
+                            <option value="airnow">AirNow (air quality)</option>
+                        </select>
+                        <div class="form-text">NWS uses your station's latitude/longitude. Leave lat/lon blank to inherit from Station settings.</div>
+                    </div>
                     <div class="col-12"><label class="form-label">Config (JSON)</label>
                         <textarea class="form-control font-monospace" id="sourceConfig" rows="6" placeholder='{"key": "value"}'></textarea>
+                    </div>
+                    <div class="col-12" id="testResultRow" style="display:none">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span class="fw-semibold small">Test Result</span>
+                            <span id="testStatusBadge"></span>
+                        </div>
+                        <pre id="testResultPre" class="border rounded p-2 small bg-body-secondary overflow-auto" style="max-height:200px;white-space:pre-wrap"></pre>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-info" id="testSourceBtn" onclick="testSource()" style="display:none">
+                    <span id="testSpinner" class="spinner-border spinner-border-sm me-1" style="display:none" role="status"></span>
+                    Test
+                </button>
                 <button type="button" class="btn btn-primary" onclick="saveSource()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* Test Result Modal *@
+<div class="modal fade" id="testResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Test — <span id="trSourceName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span id="trSpinner" class="spinner-border spinner-border-sm" role="status"></span>
+                    <span id="trBadge"></span>
+                </div>
+                <pre id="trOutput" class="border rounded p-2 small bg-body-secondary overflow-auto" style="max-height:300px;white-space:pre-wrap"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -108,13 +156,45 @@
 
 @section Scripts {
 <script>
-const noPollTypes = ['Push', 'Mqtt', 'DataSink'];
-const noUrlTypes  = ['Push', 'Mqtt'];
+const noPollTypes  = ['Push', 'Mqtt', 'DataSink', 'RadarMapServer'];
+const noUrlTypes   = ['Push', 'Mqtt'];
+const testableTypes = ['Forecast', 'Pull', 'AirQuality', 'Alerts', 'Mqtt', 'RadarMapServer'];
 
 function onTypeChange() {
     const t = document.getElementById('sourceType').value;
-    document.getElementById('pollRow').style.display = noPollTypes.includes(t) ? 'none' : '';
-    document.getElementById('urlRow').style.display  = noUrlTypes.includes(t)  ? 'none' : '';
+    document.getElementById('pollRow').style.display   = noPollTypes.includes(t)  ? 'none' : '';
+    document.getElementById('urlRow').style.display    = noUrlTypes.includes(t)   ? 'none' : '';
+    document.getElementById('testSourceBtn').style.display = testableTypes.includes(t) ? '' : 'none';
+    document.getElementById('testResultRow').style.display = 'none';
+}
+
+// Provider presets: fill the config template + set an appropriate source Type.
+// Leaving latitude/longitude out lets the adapter inherit them from Station settings.
+const PROVIDER_PRESETS = {
+    'nws-current':        { type: 'Pull',       config: { provider: 'nws-current' } },
+    'nws':                { type: 'Forecast',   config: { provider: 'nws' } },
+    'openweathermap':     { type: 'Pull',       config: { provider: 'openweathermap', apiKey: '' } },
+    'weatherapi':         { type: 'Forecast',   config: { provider: 'weatherapi', apiKey: '' } },
+    'open-meteo-current': { type: 'Pull',       config: { provider: 'openmeteo' } },
+    'open-meteo':         { type: 'Forecast',   config: { provider: 'openmeteo' } },
+    'airnow':             { type: 'AirQuality', config: { provider: 'airnow', apiKey: '' } }
+};
+
+function applyPreset() {
+    const key = document.getElementById('providerPreset').value;
+    const preset = PROVIDER_PRESETS[key];
+    if (!preset) return;
+    document.getElementById('sourceType').value = preset.type;
+    onTypeChange();
+    if (!document.getElementById('sourceName').value.trim())
+        document.getElementById('sourceName').value = document.getElementById('providerPreset').selectedOptions[0].text;
+    document.getElementById('sourceConfig').value = JSON.stringify(preset.config, null, 2);
+}
+
+function clearTestResult() {
+    document.getElementById('testResultRow').style.display = 'none';
+    document.getElementById('testResultPre').textContent = '';
+    document.getElementById('testStatusBadge').innerHTML = '';
 }
 
 function openAddModal() {
@@ -126,6 +206,8 @@ function openAddModal() {
     document.getElementById('sourceEnabled').checked = true;
     document.getElementById('sourceUrl').value = '';
     document.getElementById('sourceConfig').value = '';
+    document.getElementById('providerPreset').value = '';
+    clearTestResult();
     onTypeChange();
     new bootstrap.Modal('#sourceModal').show();
 }
@@ -141,8 +223,66 @@ function openEditModal(id) {
     document.getElementById('sourceEnabled').checked = s.isEnabled;
     document.getElementById('sourceUrl').value = s.url ?? '';
     document.getElementById('sourceConfig').value = s.config ? JSON.stringify(JSON.parse(s.config), null, 2) : '';
+    document.getElementById('providerPreset').value = '';
+    clearTestResult();
     onTypeChange();
     new bootstrap.Modal('#sourceModal').show();
+}
+
+async function testSourceById(id, name) {
+    document.getElementById('trSourceName').textContent = name;
+    document.getElementById('trSpinner').style.display = '';
+    document.getElementById('trBadge').innerHTML = '';
+    document.getElementById('trOutput').textContent = '';
+    const modal = new bootstrap.Modal('#testResultModal');
+    modal.show();
+
+    try {
+        const r = await fetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
+        const data = await r.json();
+        document.getElementById('trSpinner').style.display = 'none';
+        document.getElementById('trBadge').innerHTML = data.success
+            ? '<span class="badge text-bg-success">OK</span>'
+            : '<span class="badge text-bg-danger">Failed</span>';
+        const display = { ...(data.error ? { error: data.error } : {}), ...(data.sample ?? {}) };
+        document.getElementById('trOutput').textContent = JSON.stringify(display, null, 2);
+    } catch (err) {
+        document.getElementById('trSpinner').style.display = 'none';
+        document.getElementById('trBadge').innerHTML = '<span class="badge text-bg-danger">Error</span>';
+        document.getElementById('trOutput').textContent = String(err);
+    }
+}
+
+async function testSource() {
+    const id = parseInt(document.getElementById('sourceId').value);
+    if (!id) { alert('Save the source first before testing.'); return; }
+    const spinner = document.getElementById('testSpinner');
+    const btn = document.getElementById('testSourceBtn');
+    const resultRow = document.getElementById('testResultRow');
+    const pre = document.getElementById('testResultPre');
+    const badge = document.getElementById('testStatusBadge');
+
+    spinner.style.display = '';
+    btn.disabled = true;
+    resultRow.style.display = 'none';
+
+    try {
+        const r = await fetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
+        const data = await r.json();
+        resultRow.style.display = '';
+        badge.innerHTML = data.success
+            ? '<span class="badge text-bg-success">OK</span>'
+            : '<span class="badge text-bg-danger">Failed</span>';
+        const display = { ...(data.error ? { error: data.error } : {}), ...(data.sample ?? {}) };
+        pre.textContent = JSON.stringify(display, null, 2);
+    } catch (err) {
+        resultRow.style.display = '';
+        badge.innerHTML = '<span class="badge text-bg-danger">Error</span>';
+        pre.textContent = String(err);
+    } finally {
+        spinner.style.display = 'none';
+        btn.disabled = false;
+    }
 }
 
 async function saveSource() {

@@ -1,4 +1,5 @@
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject frcastr.Core.Interfaces.ISettingsService SettingsSvc
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="auto" id="htmlRoot">
 <head>
@@ -8,13 +9,19 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/gridstack@12/dist/gridstack.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
     <link rel="stylesheet" href="~/css/weather-animations.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
 </head>
 <body>
+    @{ var _logoPath = await SettingsSvc.GetAsync("Branding.Logo"); }
     <nav class="navbar navbar-expand-lg @(ViewData["DashboardPage"] != null ? "dashboard-nav" : "") border-bottom" id="mainNav">
         <div class="container">
-            <a class="navbar-brand fw-bold" asp-page="/Index">
+            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" asp-page="/Index">
+                @if (!string.IsNullOrEmpty(_logoPath))
+                {
+                    <img src="@_logoPath" alt="Logo" style="max-height:32px;" />
+                }
                 @(Configuration["Branding:AppName"] ?? "frcastr")
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navCollapse">
@@ -33,8 +40,14 @@
                     <li class="nav-item">
                         <a class="nav-link" asp-page="/History">History</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" asp-page="/Radar">Radar</a>
+                    </li>
                 </ul>
                 <ul class="navbar-nav align-items-center gap-2">
+                    <li class="nav-item">
+                        <button class="btn btn-sm btn-outline-secondary" id="fullscreenBtn" onclick="toggleFullscreen()" title="Toggle full screen">&#x26F6;</button>
+                    </li>
                     <li class="nav-item">
                         <span id="tempUnitToggle" class="nav-link px-1" style="cursor:pointer" onclick="toggleTempUnit()" title="Toggle temperature unit">
                             <span id="tempUnitC" class="fw-bold">C</span><span class="text-muted" style="font-size:0.7em">°</span>
@@ -89,6 +102,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gridstack@12/dist/gridstack-all.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
     <script src="~/js/theme.js" asp-append-version="true"></script>
     <script src="~/js/temp-unit.js" asp-append-version="true"></script>
     <script src="~/js/dashboard-nav.js" asp-append-version="true"></script>

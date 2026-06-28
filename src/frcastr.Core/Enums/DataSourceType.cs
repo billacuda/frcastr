@@ -8,5 +8,6 @@ public enum DataSourceType
     Alerts,
     AirQuality,
     Mqtt,
-    DataSink
+    DataSink,
+    RadarMapServer
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using frcastr.Core.Entities;
 using frcastr.Core.Enums;
 using frcastr.Infrastructure.Data;
@@ -19,4 +21,9 @@ public class DataSourcesModel(ApplicationDbContext db) : PageModel
 
     public static IEnumerable<DataSourceType> AllTypes =>
         Enum.GetValues<DataSourceType>();
+
+    public static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 }

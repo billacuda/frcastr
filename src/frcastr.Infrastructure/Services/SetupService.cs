@@ -225,6 +225,8 @@ public class SetupService : ISetupService
             ("Email.DigestHour",                "7",    "Hour of day (UTC) to send daily digest email."),
             ("Email.OutboundConfigured",        "false","Whether outbound email is configured."),
             ("Auth.LocalAccountsEnabled",       "true", "Allow local account login."),
+            ("Auth.SessionTimeoutHours",        "0",    "Max session duration in hours (0 = 30-day sliding session)."),
+            ("Branding.Logo",                   "",     "Path to navbar logo image (empty = show app name text)."),
         };
 
         foreach (var (key, value, desc) in defaults)

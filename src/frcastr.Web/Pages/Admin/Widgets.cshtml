@@ -18,7 +18,7 @@
             <tbody>
                 @foreach (var w in Model.Widgets)
                 {
-                    <tr id="wrow-@w.Id" data-widget='@System.Text.Json.JsonSerializer.Serialize(w)'>
+                    <tr id="wrow-@w.Id" data-widget='@System.Text.Json.JsonSerializer.Serialize(w, WidgetsModel.JsonOpts)'>
                         <td class="fw-semibold">@w.Title</td>
                         <td><span class="badge text-bg-secondary">@w.Type</span></td>
                         <td class="small text-body-secondary">@w.DashboardName</td>
@@ -51,7 +51,7 @@
                     <div class="col-md-3"><label class="form-label">Type</label>
                         <select class="form-select" id="widgetType">
                             @foreach (var t in WidgetsModel.AllTypes)
-                            { <option value="@((int)t)">@t</option> }
+                            { <option value="@((int)t)">@(WidgetsModel.TypeNames.GetValueOrDefault(t, t.ToString()))</option> }
                         </select></div>
                     <div class="col-md-3"><label class="form-label">Dashboard</label>
                         <input type="text" class="form-control" id="widgetDashboardName" value="Default" placeholder="Default" /></div>

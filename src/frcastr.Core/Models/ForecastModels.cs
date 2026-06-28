@@ -14,4 +14,5 @@ public record SourceForecast(int SourceId, string SourceName, IReadOnlyList<Fore
 
 public record ForecastResult(
     IReadOnlyList<SourceForecast> PerSource,
-    IReadOnlyList<ForecastPeriod> Aggregated);
+    IReadOnlyList<ForecastPeriod> Aggregated,
+    IReadOnlyList<ForecastPeriod> AggregatedHourly);

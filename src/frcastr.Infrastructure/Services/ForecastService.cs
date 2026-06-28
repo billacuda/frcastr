@@ -23,14 +23,15 @@ public class ForecastService(ApplicationDbContext dbContext) : IForecastService
             .OrderByDescending(fc => fc.FetchedAt)
             .ToListAsync(ct);
 
-        // Keep only the most recent cache entry per source
-        var latestPerSource = caches
+        // Daily: keep most recent non-hourly cache per source
+        var latestDaily = caches
+            .Where(fc => !fc.IsHourly)
             .GroupBy(fc => fc.SourceId)
             .Select(g => g.First())
             .ToList();
 
         var perSource = new List<SourceForecast>();
-        foreach (var cache in latestPerSource)
+        foreach (var cache in latestDaily)
         {
             var periods = DeserializePeriods(cache.ForecastJson);
             if (periods.Count > 0)
@@ -38,7 +39,25 @@ public class ForecastService(ApplicationDbContext dbContext) : IForecastService
         }
 
         var aggregated = Aggregate(perSource.Select(s => s.Periods).ToList());
-        return new ForecastResult(perSource, aggregated);
+
+        // Hourly: keep most recent hourly cache per source, pass through without 6-hour bucketing
+        var latestHourly = caches
+            .Where(fc => fc.IsHourly)
+            .GroupBy(fc => fc.SourceId)
+            .Select(g => g.First())
+            .ToList();
+
+        var hourlyPeriods = new List<IReadOnlyList<ForecastPeriod>>();
+        foreach (var cache in latestHourly)
+        {
+            var periods = DeserializePeriods(cache.ForecastJson);
+            if (periods.Count > 0) hourlyPeriods.Add(periods);
+        }
+        var aggregatedHourly = hourlyPeriods.Count == 1
+            ? hourlyPeriods[0]
+            : AggregateHourly(hourlyPeriods);
+
+        return new ForecastResult(perSource, aggregated, aggregatedHourly);
     }
 
     private static IReadOnlyList<ForecastPeriod> DeserializePeriods(string json)
@@ -51,6 +70,35 @@ public class ForecastService(ApplicationDbContext dbContext) : IForecastService
         {
             return [];
         }
+    }
+
+    // For hourly data: aggregate across sources per 1-hour bucket.
+    private static IReadOnlyList<ForecastPeriod> AggregateHourly(
+        IReadOnlyList<IReadOnlyList<ForecastPeriod>> allSourcePeriods)
+    {
+        if (allSourcePeriods.Count == 0) return [];
+        if (allSourcePeriods.Count == 1) return allSourcePeriods[0];
+
+        var all = allSourcePeriods.SelectMany(p => p).ToList();
+        var buckets = all.GroupBy(p => new DateTime(
+            p.PeriodStart.Year, p.PeriodStart.Month, p.PeriodStart.Day,
+            p.PeriodStart.Hour, 0, 0, DateTimeKind.Utc));
+
+        var result = new List<ForecastPeriod>();
+        foreach (var bucket in buckets.OrderBy(b => b.Key))
+        {
+            var periods = bucket.ToList();
+            result.Add(new ForecastPeriod(
+                PeriodStart: bucket.Key,
+                PeriodEnd: bucket.Key.AddHours(1),
+                IsDaytime: periods.First().IsDaytime,
+                Temperature: RejectedAverage(periods.Select(p => p.Temperature)),
+                Condition: Mode(periods.Select(p => p.Condition)),
+                PrecipChance: RejectedAverage(periods.Select(p => p.PrecipChance)),
+                WindSpeed: RejectedAverage(periods.Select(p => p.WindSpeed)),
+                WindDirection: Mode(periods.Select(p => p.WindDirection))));
+        }
+        return result;
     }
 
     // Outlier-rejected average aggregation across sources for each time bucket.

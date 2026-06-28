@@ -1,0 +1,96 @@
+@page
+@model frcastr.Web.Pages.RadarModel
+@{
+    ViewData["Title"] = "Radar";
+}
+
+<div style="position:relative">
+    <div id="radarMap" style="width:100%"></div>
+    <div id="radarLegend" style="position:absolute;bottom:30px;left:10px;z-index:1000;background:rgba(0,0,0,0.72);border-radius:6px;padding:7px 10px;color:#fff;font-size:11px;pointer-events:none;line-height:1.4">
+        <div style="font-weight:600;margin-bottom:4px;font-size:12px">Precipitation</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#00ffff;display:inline-block;flex-shrink:0"></span>Trace</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#00cc00;display:inline-block;flex-shrink:0"></span>Light</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#009900;display:inline-block;flex-shrink:0"></span>Moderate</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#ffff00;display:inline-block;flex-shrink:0"></span>Heavy</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#ff9900;display:inline-block;flex-shrink:0"></span>Very Heavy</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#cc0000;display:inline-block;flex-shrink:0"></span>Intense</div>
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:2px;background:#660099;display:inline-block;flex-shrink:0"></span>Extreme</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    var stationLat = parseFloat('@Model.StationLat') || 39.5;
+    var stationLon = parseFloat('@Model.StationLon') || -98.35;
+    var LS_KEY = 'frcastr-radar-view';
+
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(LS_KEY)); } catch (e) {}
+    var lat  = (saved && saved.lat  != null) ? saved.lat  : stationLat;
+    var lon  = (saved && saved.lon  != null) ? saved.lon  : stationLon;
+    var zoom = (saved && saved.zoom != null) ? saved.zoom : 5;
+
+    function setMapHeight() {
+        var nav = document.getElementById('mainNav');
+        var h = window.innerHeight - (document.fullscreenElement ? 0 : nav.offsetHeight);
+        document.getElementById('radarMap').style.height = h + 'px';
+    }
+    setMapHeight();
+    window.addEventListener('resize', setMapHeight);
+    document.addEventListener('fullscreenchange', setMapHeight);
+
+    function getBaseTileUrl() {
+        var htmlEl = document.getElementById('htmlRoot');
+        var isDark = htmlEl && htmlEl.getAttribute('data-bs-theme') === 'dark';
+        return isDark
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+    }
+
+    var map = L.map('radarMap', { zoomControl: true, attributionControl: false })
+               .setView([lat, lon], zoom);
+
+    var baseLayer = L.tileLayer(getBaseTileUrl(), { maxZoom: 18 });
+    baseLayer.addTo(map);
+
+    var attr = L.control.attribution({ position: 'bottomright', prefix: false });
+    attr.addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>');
+    attr.addTo(map);
+
+    fetch('https://api.rainviewer.com/public/weather-maps.json')
+        .then(function (r) { return r.json(); })
+        .then(function (rv) {
+            var past = rv && rv.radar && rv.radar.past;
+            if (!past || !past.length) return;
+            var latest = past[past.length - 1];
+            var rvUrl = rv.host + latest.path + '/256/{z}/{x}/{y}/2/1_1.png';
+            L.tileLayer(rvUrl, { opacity: 0.6, maxZoom: 18 }).addTo(map);
+            attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank">RainViewer</a>');
+        })
+        .catch(function (e) { console.warn('frcastr: RainViewer fetch failed', e); });
+
+    var htmlRoot = document.getElementById('htmlRoot');
+    if (htmlRoot) {
+        new MutationObserver(function () {
+            map.removeLayer(baseLayer);
+            baseLayer = L.tileLayer(getBaseTileUrl(), { maxZoom: 18 });
+            baseLayer.addTo(map);
+            baseLayer.bringToBack();
+        }).observe(htmlRoot, { attributes: true, attributeFilter: ['data-bs-theme'] });
+    }
+
+    var saveTimer;
+    map.on('moveend zoomend', function () {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+            var c = map.getCenter();
+            try { localStorage.setItem(LS_KEY, JSON.stringify({ lat: c.lat, lon: c.lng, zoom: map.getZoom() })); }
+            catch (e) {}
+        }, 800);
+    });
+}());
+</script>
+}

@@ -15,8 +15,8 @@
 /* ─── Cloud Shape (shared: rain, lightning, snow, cloud) ─────────────────── */
 .wa-cloud-shape {
     position: relative;
-    width: 80px;
-    height: 28px;
+    width: clamp(50px, 72cqmin, 280px);
+    height: clamp(18px, 25cqmin, 100px);
     background: var(--bs-secondary-bg, #e9ecef);
     border-radius: 40px;
     flex-shrink: 0;
@@ -30,22 +30,22 @@
     border-radius: 50%;
 }
 .wa-cloud-shape::before {
-    width: 36px;
-    height: 36px;
-    top: -18px;
-    left: 12px;
+    width: 29cqmin;
+    height: 29cqmin;
+    top: -15cqmin;
+    left: 10cqmin;
 }
 .wa-cloud-shape::after {
-    width: 24px;
-    height: 24px;
-    top: -12px;
-    left: 40px;
+    width: 20cqmin;
+    height: 20cqmin;
+    top: -10cqmin;
+    left: 33cqmin;
 }
 
 /* ─── Sun ────────────────────────────────────────────────────────────────── */
 .wa-sun-disc {
-    width: 56px;
-    height: 56px;
+    width: clamp(30px, 55cqmin, 200px);
+    height: clamp(30px, 55cqmin, 200px);
     background: #fbbf24;
     border-radius: 50%;
     flex-shrink: 0;
@@ -68,6 +68,29 @@
 
 @keyframes wa-spin {
     to { transform: rotate(360deg); }
+}
+
+/* ─── Partly Cloudy ──────────────────────────────────────────────────────── */
+.wa-partly-cloudy .wa-pc-scene {
+    position: relative;
+    width: clamp(55px, 80cqmin, 290px);
+    height: clamp(38px, 58cqmin, 210px);
+    flex-shrink: 0;
+}
+.wa-partly-cloudy .wa-sun-disc {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: clamp(24px, 40cqmin, 145px);
+    height: clamp(24px, 40cqmin, 145px);
+    z-index: 0;
+}
+.wa-partly-cloudy .wa-pc-cloud {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    z-index: 1;
+    animation: wa-drift 6s ease-in-out infinite;
 }
 
 /* ─── Cloud (overcast/windy) ─────────────────────────────────────────────── */
@@ -102,8 +125,8 @@
 }
 .wa-drops {
     position: relative;
-    height: 44px;
-    width: 80px;
+    height: clamp(30px, 40cqmin, 150px);
+    width: clamp(50px, 72cqmin, 280px);
 }
 .wa-drop {
     position: absolute;
@@ -122,7 +145,7 @@
     0%   { top: 0;    opacity: 0; }
     15%  { opacity: .8; }
     85%  { opacity: .8; }
-    100% { top: 44px; opacity: 0; }
+    100% { top: 100%; opacity: 0; }
 }
 
 /* ─── Lightning ──────────────────────────────────────────────────────────── */
@@ -130,7 +153,7 @@
     animation: wa-drift 4s ease-in-out infinite;
 }
 .wa-bolt {
-    font-size: 2rem;
+    font-size: clamp(1.5rem, 20cqmin, 7rem);
     line-height: 1;
     color: #fde68a;
     text-shadow: 0 0 8px rgba(253,230,138,.9);
@@ -152,7 +175,7 @@
     left: var(--offset, 20%);
     top: 0;
     opacity: 0;
-    font-size: 0.85rem;
+    font-size: clamp(0.5rem, 8cqmin, 2.5rem);
     color: #bfdbfe;
     animation: wa-snowfall 1.8s linear infinite;
     animation-delay: var(--delay, 0s);
@@ -162,7 +185,7 @@
     0%   { top: 0;    opacity: 0;   transform: translateX(0)   rotate(0deg); }
     15%  { opacity: .9; }
     85%  { opacity: .9; }
-    100% { top: 44px; opacity: 0;   transform: translateX(8px) rotate(200deg); }
+    100% { top: 100%; opacity: 0;   transform: translateX(8px) rotate(200deg); }
 }
 
 /* ─── Stale widget ───────────────────────────────────────────────────────── */

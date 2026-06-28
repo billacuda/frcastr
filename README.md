@@ -3,7 +3,7 @@
 
 Personal weather station web application. Accepts pushed sensor data and pulls from external providers, displays live readings on a customizable dashboard, and archives everything to SQL Server.
 
-## **Current version [0.1.1](CHANGELOG.md)**
+## **Current version [0.3.0](CHANGELOG.md)**
 
 ## Stack
 

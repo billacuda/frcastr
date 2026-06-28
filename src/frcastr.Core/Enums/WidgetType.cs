@@ -19,5 +19,6 @@ public enum WidgetType
     Rainfall = 14,
     PressureTrend = 15,
     AirQuality = 16,
-    Radar = 17
+    Radar = 17,
+    HourlyForecast = 18
 }

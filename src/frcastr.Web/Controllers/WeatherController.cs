@@ -16,7 +16,8 @@ public class WeatherController(
     IWeatherDataService weatherData,
     IForecastService forecast,
     ISettingsService settings,
-    IDataSourceStatusService statusService) : ControllerBase
+    IDataSourceStatusService statusService,
+    ISunriseSunsetService sunriseSunset) : ControllerBase
 {
     [HttpGet("current")]
     [OutputCache(PolicyName = "WeatherCurrent")]
@@ -44,22 +45,61 @@ public class WeatherController(
     }
 
     [HttpGet("moon")]
-    public IActionResult Moon()
-        => Ok(MoonPhaseCalculator.Calculate(DateTime.UtcNow));
+    [OutputCache(PolicyName = "SunMoon")]
+    public async Task<IActionResult> Moon(CancellationToken ct)
+    {
+        var utcNow = DateTime.UtcNow;
+        // Phase, icon, and illumination come from the math calculator (always accurate).
+        // Moonrise/moonset and phase name come from sunrisesunset.io when available.
+        var phase = MoonPhaseCalculator.Calculate(utcNow);
+        var ss    = await sunriseSunset.GetTodayAsync(ct);
+        if (ss is not null)
+        {
+            return Ok(new MoonPhaseInfo(
+                Phase:       phase.Phase,
+                PhaseName:   ss.MoonPhase ?? phase.PhaseName,
+                Illumination: ss.MoonIllumination ?? phase.Illumination,
+                Icon:        phase.Icon,
+                Moonrise:    ss.Moonrise,
+                Moonset:     ss.Moonset));
+        }
+
+        // Fallback: math-based moonrise/moonset
+        var latStr = await settings.GetAsync("Station.Latitude",  ct);
+        var lonStr = await settings.GetAsync("Station.Longitude", ct);
+        var tzId   = await settings.GetAsync("Station.TimeZone",  ct);
+        if (!double.TryParse(latStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
+            !double.TryParse(lonStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var lon))
+            return Ok(phase);
+        var tz = tzId is not null ? TimeZoneInfo.FindSystemTimeZoneById(tzId) : TimeZoneInfo.Local;
+        return Ok(MoonPhaseCalculator.CalculateWithRiseSet(utcNow, lat, lon, tz));
+    }
 
     [HttpGet("sun")]
+    [OutputCache(PolicyName = "SunMoon")]
     public async Task<IActionResult> Sun(CancellationToken ct)
     {
-        var latStr = await settings.GetAsync("Station.Latitude", ct);
+        var ss = await sunriseSunset.GetTodayAsync(ct);
+        if (ss is not null)
+        {
+            return Ok(new SolarInfo(
+                Sunrise:                  ss.Sunrise,
+                SolarNoon:                ss.SolarNoon ?? DateTimeOffset.MinValue,
+                Sunset:                   ss.Sunset,
+                GoldenHourMorningEnd:     ss.GoldenHourMorning,
+                GoldenHourEveningStart:   ss.GoldenHourEvening,
+                DayLength:                ss.DayLength ?? TimeSpan.Zero));
+        }
+
+        // Fallback: math-based solar calculator
+        var latStr = await settings.GetAsync("Station.Latitude",  ct);
         var lonStr = await settings.GetAsync("Station.Longitude", ct);
-        var tzId = await settings.GetAsync("Station.TimeZone", ct);
-
-        if (!double.TryParse(latStr, out var lat) || !double.TryParse(lonStr, out var lon))
+        var tzId   = await settings.GetAsync("Station.TimeZone",  ct);
+        if (!double.TryParse(latStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) ||
+            !double.TryParse(lonStr, NumberStyles.Float, CultureInfo.InvariantCulture, out var lon))
             return Ok(null);
-
         var tz = tzId is not null ? TimeZoneInfo.FindSystemTimeZoneById(tzId) : TimeZoneInfo.Local;
-        var result = SolarCalculator.Calculate(lat, lon, DateOnly.FromDateTime(DateTime.UtcNow), tz);
-        return Ok(result);
+        return Ok(SolarCalculator.Calculate(lat, lon, DateOnly.FromDateTime(DateTime.UtcNow), tz));
     }
 
     [HttpGet("alerts")]
@@ -69,6 +109,32 @@ public class WeatherController(
         var cache = await GetLatestAlertCacheAsync(ct);
         if (cache is null) return Ok(Array.Empty<object>());
         return Content(cache, "application/json");
+    }
+
+    [HttpGet("daily-extremes")]
+    [OutputCache(PolicyName = "WeatherCurrent")]
+    public async Task<IActionResult> DailyExtremes(CancellationToken ct)
+    {
+        var tzId = await settings.GetAsync("Station.TimeZone", ct);
+        var tz = tzId is not null ? TimeZoneInfo.FindSystemTimeZoneById(tzId) : TimeZoneInfo.Local;
+        var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        var todayLocal = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, 0, 0, 0, DateTimeKind.Unspecified);
+        var startUtc = TimeZoneInfo.ConvertTimeToUtc(todayLocal, tz);
+        var result = await weatherData.GetHistoryAsync([], startUtc, startUtc.AddDays(1), ct);
+
+        var extremes = result.RawPoints
+            .GroupBy(p => p.ChannelName)
+            .ToDictionary(
+                g => g.Key,
+                g => new { min = (double)g.Min(p => p.Value), max = (double)g.Max(p => p.Value) });
+
+        foreach (var grp in result.AggregatePoints.GroupBy(p => p.ChannelName))
+        {
+            if (!extremes.ContainsKey(grp.Key))
+                extremes[grp.Key] = new { min = (double)grp.Min(p => p.Min), max = (double)grp.Max(p => p.Max) };
+        }
+
+        return Ok(extremes);
     }
 
     [HttpGet("records")]
@@ -85,16 +151,23 @@ public class WeatherController(
         string? channels = null,
         CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var d = date is not null && DateTime.TryParse(date, out var parsed)
-            ? parsed.Date
-            : DateTime.Today;
+            ? DateTime.SpecifyKind(parsed.Date, DateTimeKind.Utc)
+            : now.Date;
 
         var (start, end) = period.ToLower() switch
         {
-            "week" => (d.AddDays(-6), d.AddDays(1)),
-            "month" => (new DateTime(d.Year, d.Month, 1), new DateTime(d.Year, d.Month, 1).AddMonths(1)),
-            _ => (d, d.AddDays(1))
+            "week"  => (d.AddDays(-6), d.AddDays(1)),
+            "month" => (new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                        new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1)),
+            "year"  => (new DateTime(d.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                        new DateTime(d.Year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
+            _       => (d, d.AddDays(1))
         };
+
+        // Never query past the current moment — ensures today's most-recent readings are included
+        if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
         var result = await weatherData.GetHistoryAsync(channelList, start, end, ct);
@@ -109,16 +182,22 @@ public class WeatherController(
         string? channels = null,
         CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var d = date is not null && DateTime.TryParse(date, out var parsed)
-            ? parsed.Date
-            : DateTime.Today;
+            ? DateTime.SpecifyKind(parsed.Date, DateTimeKind.Utc)
+            : now.Date;
 
         var (start, end) = period.ToLower() switch
         {
-            "week" => (d.AddDays(-6), d.AddDays(1)),
-            "month" => (new DateTime(d.Year, d.Month, 1), new DateTime(d.Year, d.Month, 1).AddMonths(1)),
-            _ => (d, d.AddDays(1))
+            "week"  => (d.AddDays(-6), d.AddDays(1)),
+            "month" => (new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Utc),
+                        new DateTime(d.Year, d.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(1)),
+            "year"  => (new DateTime(d.Year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                        new DateTime(d.Year + 1, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
+            _       => (d, d.AddDays(1))
         };
+
+        if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
         var result = await weatherData.GetHistoryAsync(channelList, start, end, ct);

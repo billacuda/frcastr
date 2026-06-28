@@ -209,6 +209,22 @@
                             <input type="text" class="form-control" data-setting-key="Branding:AppName" value="@Model.Get("Branding:AppName", "frcastr")" /></div>
                         <div class="col-md-3"><label class="form-label">Primary Color</label>
                             <input type="color" class="form-control form-control-color" data-setting-key="Branding:PrimaryColor" value="@Model.Get("Branding:PrimaryColor", "#0d6efd")" /></div>
+                        <div class="col-12"><label class="form-label">Navbar Logo</label>
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                @{ var currentLogo = Model.Get("Branding.Logo"); }
+                                @if (!string.IsNullOrEmpty(currentLogo))
+                                {
+                                    <img src="@currentLogo" alt="Current logo" style="max-height:40px;border:1px solid var(--bs-border-color);border-radius:4px;padding:4px;" id="logoPreview" />
+                                    <button class="btn btn-sm btn-outline-danger" type="button" onclick="removeLogo()">Remove Logo</button>
+                                }
+                                else
+                                {
+                                    <span class="text-body-secondary small" id="logoPreviewPlaceholder">No logo set</span>
+                                }
+                                <input type="file" class="form-control" id="logoFile" accept=".png,.jpg,.jpeg,.gif,.svg,.webp" onchange="uploadLogo(this)" style="max-width:300px;" />
+                            </div>
+                            <div class="form-text">Replaces the app name text in the navbar. PNG, JPG, GIF, SVG, or WebP.</div>
+                        </div>
                     </div>
                     <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colBranding')">Save Branding</button></div>
                 </div>
@@ -220,9 +236,15 @@
             <h2 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#colAuth">Auth</button></h2>
             <div id="colAuth" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
                 <div class="accordion-body">
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="localAccounts" data-setting-key="Auth.LocalAccountsEnabled" @(Model.Get("Auth.LocalAccountsEnabled", "true") == "true" ? "checked" : "") />
-                        <label class="form-check-label" for="localAccounts">Enable local account login</label>
+                    <div class="row g-3">
+                        <div class="col-12"><div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="localAccounts" data-setting-key="Auth.LocalAccountsEnabled" @(Model.Get("Auth.LocalAccountsEnabled", "true") == "true" ? "checked" : "") />
+                            <label class="form-check-label" for="localAccounts">Enable local account login</label>
+                        </div></div>
+                        <div class="col-md-6"><label class="form-label">Max Login Time (hours)</label>
+                            <input type="number" min="0" class="form-control" data-setting-key="Auth.SessionTimeoutHours" value="@Model.Get("Auth.SessionTimeoutHours", "0")" />
+                            <div class="form-text">0 = 30-day sliding session. Requires app restart to take effect.</div>
+                        </div>
                     </div>
                     <div class="mt-3 text-end"><button class="btn btn-primary btn-sm" onclick="saveSection('colAuth')">Save Auth</button></div>
                 </div>
@@ -234,6 +256,37 @@
 
 @section Scripts {
 <script>
+async function uploadLogo(input) {
+    if (!input.files || !input.files[0]) return;
+    const form = new FormData();
+    form.append('file', input.files[0]);
+    const r = await fetch('/api/admin/branding/logo', { method: 'POST', body: form });
+    if (r.ok) {
+        const data = await r.json();
+        const placeholder = document.getElementById('logoPreviewPlaceholder');
+        if (placeholder) placeholder.remove();
+        let img = document.getElementById('logoPreview');
+        if (!img) {
+            img = document.createElement('img');
+            img.id = 'logoPreview';
+            img.alt = 'Current logo';
+            img.style = 'max-height:40px;border:1px solid var(--bs-border-color);border-radius:4px;padding:4px;';
+            input.parentElement.insertBefore(img, input);
+        }
+        img.src = data.url + '?t=' + Date.now();
+    } else {
+        alert('Logo upload failed: ' + await r.text());
+    }
+    input.value = '';
+}
+
+async function removeLogo() {
+    if (!confirm('Remove the navbar logo?')) return;
+    const r = await fetch('/api/admin/branding/logo', { method: 'DELETE' });
+    if (r.ok) location.reload();
+    else alert('Could not remove logo.');
+}
+
 async function saveSection(colId) {
     const col = document.getElementById(colId);
     if (!col) return;

@@ -8,4 +8,5 @@ public class ForecastCache
     public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
     public string ForecastJson { get; set; } = null!;
     public DateTime ValidUntil { get; set; }
+    public bool IsHourly { get; set; }
 }
