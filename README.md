@@ -8,17 +8,19 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 ## Stack
 
 - ASP.NET Core 10, Razor Pages, MVC API controllers
-- EF Core 10 + SQL Server
+- EF Core 10 + MSSQL Server
 - Bootstrap 5, GridStack v12, Chart.js (CDN)
 - IIS InProcess hosting
 
 ## Quick start
 
 1. Create an IIS site pointing at an empty folder (e.g. `E:\Sites\frcastr`)
-2. Run the deploy script (must be Administrator):
+2. Creat apppool with name of your choice, set to unmanaged code.
+3. Change user principal for app pool to a service account that can access to your MSSQL Server. (Permissions will be set up on database creation)
+4. Run the deploy script (must be Administrator):
 
 ```powershell
-.\deploy.ps1 -IISSiteName "frcastr"
+.\deploy.ps1 -IISSiteName "frcastr" -IISAppPoolName "frcastr"
 ```
 
 3. Browse to the site — the setup wizard will open automatically
