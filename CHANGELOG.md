@@ -4,6 +4,14 @@ All notable changes to frcastr are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-30
+
+### Added
+- **Moon-phase night animation for Weather Animation widget**: the `wa-sun` and `wa-partly-cloudy` animations now show the current moon-phase emoji (from `/api/weather/moon`) instead of the sun disc whenever the current time is before sunrise or after sunset (per `/api/weather/sun`), and switch back to the sun automatically at sunrise. Cloud/rain/snow/lightning animations are unchanged since they never rendered a sun/moon disc.
+
+### Changed
+- **Weather animation cloud thresholds adjusted**: `wa-cloud` now triggers above 65 % cloud coverage (was ≥ 50 %); `wa-partly-cloudy` now covers 20–64 % (was 20–49 %).
+
 ## [0.3.0] - 2026-06-27
 
 ### Added

@@ -70,6 +70,31 @@
     to { transform: rotate(360deg); }
 }
 
+/* ─── Moon (night variant of sun) ───────────────────────────────────────── */
+.wa-moon-disc {
+    background: linear-gradient(135deg, #e2e8f0, #94a3b8);
+    box-shadow:
+        0 0 0  8px rgba(226,232,240,.15),
+        0 0 0 16px rgba(226,232,240,.08),
+        0 0 0 24px rgba(226,232,240,.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: wa-moon-pulse 4s ease-in-out infinite;
+}
+.wa-moon-disc::before {
+    display: none;
+}
+.wa-moon-icon {
+    font-size: clamp(18px, 38cqmin, 140px);
+    line-height: 1;
+}
+
+@keyframes wa-moon-pulse {
+    0%, 100% { filter: drop-shadow(0 0 4px rgba(226,232,240,.5)); }
+    50%      { filter: drop-shadow(0 0 10px rgba(226,232,240,.8)); }
+}
+
 /* ─── Partly Cloudy ──────────────────────────────────────────────────────── */
 .wa-partly-cloudy .wa-pc-scene {
     position: relative;

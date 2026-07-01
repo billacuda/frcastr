@@ -41,6 +41,15 @@ window.WeatherWidgets = (function () {
         return Date.now() - new Date(t).getTime();
     }
 
+    function isNightNow(sun) {
+        if (!sun || !sun.sunrise || !sun.sunset) return false;
+        var rise = new Date(utcTs(sun.sunrise)).getTime();
+        var set  = new Date(utcTs(sun.sunset)).getTime();
+        if (isNaN(rise) || isNaN(set)) return false;
+        var now = Date.now();
+        return now < rise || now > set;
+    }
+
     function ageStr(isoTs) {
         var ms = ageMs(isoTs);
         if (ms === Infinity) return '';
@@ -169,26 +178,33 @@ window.WeatherWidgets = (function () {
         if (hasLightning)            return 'wa-lightning';
         if (precip > 0 && temp <= 2) return 'wa-snow';
         if (precip > 0)              return 'wa-rain';
-        if (cloud >= 50)             return 'wa-cloud';
+        if (cloud > 65)              return 'wa-cloud';
         if (wind > 50)               return 'wa-cloud';
         if (cloud >= 20)             return 'wa-partly-cloudy';
         return 'wa-sun';
     }
 
-    function buildAnimHtml(cls) {
+    function discHtml(night, moonIcon) {
+        if (!night) return '<div class="wa-sun-disc"></div>';
+        return '<div class="wa-sun-disc wa-moon-disc"><span class="wa-moon-icon">' +
+            escHtml(moonIcon || '🌙') + '</span></div>';
+    }
+
+    function buildAnimHtml(cls, night, moonIcon) {
+        var wrapCls = cls + (night ? ' wa-night' : '');
         if (cls === 'wa-sun') {
-            return '<div class="weather-anim ' + cls + '"><div class="wa-sun-disc"></div></div>';
+            return '<div class="weather-anim ' + wrapCls + '">' + discHtml(night, moonIcon) + '</div>';
         }
         if (cls === 'wa-partly-cloudy') {
-            return '<div class="weather-anim ' + cls + '">' +
+            return '<div class="weather-anim ' + wrapCls + '">' +
                 '<div class="wa-pc-scene">' +
-                '<div class="wa-sun-disc"></div>' +
+                discHtml(night, moonIcon) +
                 '<div class="wa-cloud-shape wa-pc-cloud"></div>' +
                 '</div>' +
                 '</div>';
         }
         if (cls === 'wa-cloud') {
-            return '<div class="weather-anim ' + cls + '">' +
+            return '<div class="weather-anim ' + wrapCls + '">' +
                 '<div class="wa-cloud-shape wa-cloud-back"></div>' +
                 '<div class="wa-cloud-shape wa-cloud-front"></div>' +
                 '</div>';
@@ -203,7 +219,7 @@ window.WeatherWidgets = (function () {
                 : '<span class="wa-drop"  style="--offset:' + offset + ';--delay:' + delay + '"></span>';
             drops += el;
         }
-        return '<div class="weather-anim ' + cls + '">' +
+        return '<div class="weather-anim ' + wrapCls + '">' +
             '<div class="wa-cloud-shape"></div>' +
             (cls === 'wa-lightning'
                 ? '<div class="wa-bolt">&#9889;</div>'
@@ -426,8 +442,9 @@ window.WeatherWidgets = (function () {
     // 7: Weather Animation
     R[7] = function (el, config, data) {
         var readings = (data && data.current && data.current.readings) || {};
-        var cls = animClass(readings, config);
-        el.innerHTML = buildAnimHtml(cls);
+        var cls   = animClass(readings, config);
+        var night = isNightNow(data && data.sun);
+        el.innerHTML = buildAnimHtml(cls, night, data && data.moon && data.moon.icon);
     };
 
     // 8: Forecast
