@@ -4,6 +4,11 @@ All notable changes to frcastr are documented here.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-02
+
+### Fixed
+- **Weather animation widget shows the moon during daytime**: `SunriseSunsetService` anchored its CoordinateSharp calculation on the UTC calendar date instead of the station's local calendar date. CoordinateSharp binds each sunrise/sunset/dawn/dusk/moonrise/moonset event to the UTC calendar day of the date it's given, so for stations far from UTC a single local day's morning and evening events can straddle two different UTC days — pairing "today's" sunrise with yesterday's or tomorrow's sunset. This made `isNightNow()` think it was night for several hours before sunset (west of UTC) or after sunrise (east of UTC). The service now anchors on the station's local date and scans the neighboring UTC days, keeping whichever result actually converts back to that local date.
+
 ## [0.4.0] - 2026-06-30
 
 ### Added
