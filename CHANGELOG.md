@@ -4,6 +4,11 @@ All notable changes to frcastr are documented here.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-07
+
+### Fixed
+- **Alerts refresh crashed every tick, silently blocking severe-alert emails**: `AlertsRefreshBackgroundService` hardcoded `AlertCache.SourceId = 0` with a comment claiming "0 = NWS system source," but no `DataSources` row with `Id = 0` was ever seeded (`Id` is an identity column starting at 1), so every save threw `FK_AlertCaches_DataSources_SourceId` and aborted before the severe/extreme alert email step ever ran. The service now finds or creates a real "NWS Alerts" `DataSource` row (`Type=Alerts`, matching the existing admin-configurable source type used by `DataSourceTestService`) and uses its actual `Id`, so the source is also visible/manageable from Admin → Data Sources.
+
 ## [0.4.1] - 2026-07-02
 
 ### Fixed

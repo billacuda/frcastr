@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using frcastr.Core.Entities;
+using frcastr.Core.Enums;
 using frcastr.Core.Interfaces;
 using frcastr.Core.Models;
 using frcastr.Infrastructure.Data;
@@ -46,6 +47,9 @@ public class AlertsRefreshBackgroundService(
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
         var email = scope.ServiceProvider.GetRequiredService<IEmailService>();
 
+        var source = await GetOrCreateAlertsSourceAsync(db, ct);
+        if (!source.IsEnabled) return;
+
         var cacheRetentionHours = await settings.GetIntAsync("Alerts.CacheRetentionHours", 24, ct);
         var lat = await settings.GetAsync("Station.Latitude", ct);
         var lon = await settings.GetAsync("Station.Longitude", ct);
@@ -58,7 +62,7 @@ public class AlertsRefreshBackgroundService(
 
         // Check for new Extreme/Severe alerts
         var existing = await db.AlertCaches
-            .Where(ac => ac.ValidUntil > now)
+            .Where(ac => ac.SourceId == source.Id && ac.ValidUntil > now)
             .OrderByDescending(ac => ac.FetchedAt)
             .Take(1)
             .Select(ac => ac.AlertsJson)
@@ -73,11 +77,13 @@ public class AlertsRefreshBackgroundService(
         // Store new cache entry
         db.AlertCaches.Add(new AlertCache
         {
-            SourceId = 0,   // 0 = NWS system source
+            SourceId = source.Id,
             FetchedAt = now,
             AlertsJson = JsonSerializer.Serialize(alerts, JsonOpts),
             ValidUntil = now.AddHours(cacheRetentionHours)
         });
+        source.LastPolledAt = now;
+        source.LastError = null;
         await db.SaveChangesAsync(ct);
 
         // Send email for new severe alerts
@@ -88,6 +94,29 @@ public class AlertsRefreshBackgroundService(
                 $"<strong>{a.Severity}: {a.Event}</strong><br>{a.Headline}<br>{a.Description}"));
             await email.SendToRecipientsAsync(subject, body, ct);
         }
+    }
+
+    private static async Task<DataSource> GetOrCreateAlertsSourceAsync(ApplicationDbContext db, CancellationToken ct)
+    {
+        var source = await db.DataSources
+            .Where(s => s.Type == DataSourceType.Alerts)
+            .OrderBy(s => s.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (source is null)
+        {
+            source = new DataSource
+            {
+                Name = "NWS Alerts",
+                Type = DataSourceType.Alerts,
+                IsEnabled = true,
+                PollIntervalSeconds = (int)TickInterval.TotalSeconds
+            };
+            db.DataSources.Add(source);
+            await db.SaveChangesAsync(ct);
+        }
+
+        return source;
     }
 
     private async Task<IReadOnlyList<WeatherAlert>> FetchNwsAlertsAsync(
