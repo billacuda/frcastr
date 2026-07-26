@@ -15,8 +15,22 @@ public static class ChannelProcessing
         ["pressure"] = (800, 1100),
         ["wind.speed"] = (0, 400),
         ["rainfall"] = (0, 500),
-        ["aqi.outdoor"] = (0, 2000)
+        ["aqi.outdoor"] = (0, 2000),
+        ["battery.voltage"] = (0, 20)
     };
+
+    /// <summary>
+    /// Fallback bounds by channel family, applied when no exact match exists. Without this any
+    /// channel name outside the canonical set above is completely unbounded.
+    /// </summary>
+    private static readonly (string Prefix, decimal Min, decimal Max)[] PrefixBounds =
+    [
+        ("temperature.", -80, 80),
+        ("humidity.", 0, 100),
+        ("dewpoint.", -80, 80),
+        ("pressure.", 800, 1100),
+        ("battery.", 0, 20)
+    ];
 
     /// <summary>
     /// Applies calibration offset and validates against sanity bounds.
@@ -50,6 +64,15 @@ public static class ChannelProcessing
         else if (DefaultBounds.TryGetValue(channelName, out var db))
         {
             if (adjusted < db.Min || adjusted > db.Max) return null;
+        }
+        else
+        {
+            foreach (var (prefix, min, max) in PrefixBounds)
+            {
+                if (!channelName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                if (adjusted < min || adjusted > max) return null;
+                break;
+            }
         }
 
         return adjusted;

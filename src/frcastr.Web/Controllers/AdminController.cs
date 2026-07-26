@@ -31,16 +31,108 @@ public class AdminController(
     public async Task<IActionResult> GetChannels(CancellationToken ct)
     {
         var readings = await weatherData.GetCurrentReadingsAsync(ct);
-        var result = readings.Values
-            .OrderBy(r => r.ChannelName)
-            .Select(r => new
+        // "name" is the channel key ("temperature.indoor@greenhouse-01" for device readings) —
+        // it is what widgets and history queries bind to.
+        var result = readings
+            .OrderBy(kv => kv.Key)
+            .Select(kv => new
             {
-                name        = r.ChannelName,
-                value       = (double?)r.Value,
-                unit        = r.Unit,
-                lastUpdated = r.Timestamp
+                name        = kv.Key,
+                channel     = kv.Value.ChannelName,
+                value       = (double?)kv.Value.Value,
+                unit        = kv.Value.Unit,
+                lastUpdated = kv.Value.Timestamp,
+                deviceId    = kv.Value.DeviceId,
+                deviceKey   = kv.Value.DeviceKey,
+                deviceName  = kv.Value.DeviceName,
+                isCalculated = kv.Value.IsCalculated
             });
         return Ok(result);
+    }
+
+    // ── Devices ───────────────────────────────────────────────────────────────
+
+    [HttpGet("devices")]
+    public async Task<IActionResult> GetDevices(CancellationToken ct)
+    {
+        var devices = await db.Devices
+            .OrderBy(d => d.Name)
+            .Select(d => new
+            {
+                d.Id, d.DeviceId, d.Name, d.Location, d.Model, d.FirmwareVersion,
+                d.SourceId,
+                SourceName = d.Source != null ? d.Source.Name : null,
+                d.IsEnabled, d.IsPrimary, d.IsOnline, d.LastSeenAt,
+                d.OfflineThresholdMinutes, d.CreatedAt
+            })
+            .ToListAsync(ct);
+        return Ok(devices);
+    }
+
+    [HttpPut("devices/{id:int}")]
+    public async Task<IActionResult> UpdateDevice(int id, [FromBody] DeviceDto dto, CancellationToken ct)
+    {
+        var device = await db.Devices.FindAsync([id], ct);
+        if (device is null) return NotFound();
+
+        device.Name                    = string.IsNullOrWhiteSpace(dto.Name) ? device.Name : dto.Name.Trim();
+        device.Location                = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
+        device.Model                   = string.IsNullOrWhiteSpace(dto.Model) ? null : dto.Model.Trim();
+        device.IsEnabled               = dto.IsEnabled;
+        device.OfflineThresholdMinutes = dto.OfflineThresholdMinutes > 0 ? dto.OfflineThresholdMinutes : 0;
+
+        await db.SaveChangesAsync(ct);
+        await audit.LogAsync("Device.Updated",
+            userId: UserId(), userName: UserName(),
+            entityType: "Device", entityId: id.ToString(), entityName: device.Name, ct: ct);
+        return NoContent();
+    }
+
+    [HttpDelete("devices/{id:int}")]
+    public async Task<IActionResult> DeleteDevice(int id, CancellationToken ct)
+    {
+        var device = await db.Devices.FindAsync([id], ct);
+        if (device is null) return NotFound();
+
+        // Readings and records keep their history; the FK is SetNull so they become station-wide.
+        db.Devices.Remove(device);
+        await db.SaveChangesAsync(ct);
+        await audit.LogAsync("Device.Deleted",
+            userId: UserId(), userName: UserName(),
+            entityType: "Device", entityId: id.ToString(), entityName: device.Name, ct: ct);
+        return NoContent();
+    }
+
+    [HttpPost("devices/{id:int}/toggle")]
+    public async Task<IActionResult> ToggleDevice(int id, CancellationToken ct)
+    {
+        var device = await db.Devices.FindAsync([id], ct);
+        if (device is null) return NotFound();
+        device.IsEnabled = !device.IsEnabled;
+        await db.SaveChangesAsync(ct);
+        return Ok(new { device.IsEnabled });
+    }
+
+    /// <summary>Makes this device primary, clearing the flag on every other device.</summary>
+    [HttpPost("devices/{id:int}/primary")]
+    public async Task<IActionResult> SetPrimaryDevice(int id, [FromQuery] bool primary = true,
+        CancellationToken ct = default)
+    {
+        var device = await db.Devices.FindAsync([id], ct);
+        if (device is null) return NotFound();
+
+        if (primary)
+            await db.Devices.Where(d => d.Id != id && d.IsPrimary)
+                .ExecuteUpdateAsync(s => s.SetProperty(d => d.IsPrimary, false), ct);
+
+        device.IsPrimary = primary;
+        await db.SaveChangesAsync(ct);
+
+        await audit.LogAsync("Device.PrimaryChanged",
+            userId: UserId(), userName: UserName(),
+            entityType: "Device", entityId: id.ToString(), entityName: device.Name,
+            newValue: primary.ToString(), ct: ct);
+        return Ok(new { device.IsPrimary });
     }
 
     // ── Data Sources ──────────────────────────────────────────────────────────
@@ -465,6 +557,13 @@ public class AdminController(
         int PollIntervalSeconds,
         string? Url,
         string? Config);
+
+    public record DeviceDto(
+        string? Name,
+        string? Location,
+        string? Model,
+        bool IsEnabled,
+        int OfflineThresholdMinutes);
 
     public record WidgetDto(
         WidgetType Type,

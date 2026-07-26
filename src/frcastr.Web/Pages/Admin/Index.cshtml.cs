@@ -16,6 +16,7 @@ public class IndexModel(
     public int SourceCount   { get; private set; }
     public int WidgetCount   { get; private set; }
     public int WebhookCount  { get; private set; }
+    public int DeviceCount   { get; private set; }
     public List<frcastr.Core.Entities.AuditLog> RecentAudit { get; private set; } = [];
 
     public async Task OnGetAsync(CancellationToken ct)
@@ -24,6 +25,7 @@ public class IndexModel(
         SourceCount  = await db.DataSources.CountAsync(ct);
         WidgetCount  = await db.WidgetDefinitions.CountAsync(ct);
         WebhookCount = await db.WebhookAlerts.CountAsync(ct);
+        DeviceCount  = await db.Devices.CountAsync(ct);
         RecentAudit  = await db.AuditLogs
             .OrderByDescending(a => a.CreatedAt)
             .Take(8)

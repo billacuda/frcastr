@@ -1,0 +1,41 @@
+// Copy to config.h and edit. config.h is gitignored so per-device credentials never get committed.
+#pragma once
+
+// ── Identity ─────────────────────────────────────────────────────────────────
+// Must be unique per board. It becomes the {device} segment of the MQTT topic and the
+// Device ID that frcastr auto-registers, so keep it stable: changing it creates a new device.
+#define DEVICE_ID            "greenhouse-01"
+#define FIRMWARE_VERSION     "1.0.0"
+
+// ── WiFi ─────────────────────────────────────────────────────────────────────
+#define WIFI_SSID            "your-ssid"
+#define WIFI_PASSWORD        "your-password"
+
+// ── MQTT broker ──────────────────────────────────────────────────────────────
+#define MQTT_HOST            "192.168.1.50"
+#define MQTT_PORT            1883
+#define MQTT_USER            ""      // leave empty for an anonymous broker
+#define MQTT_PASSWORD        ""
+
+// Topic root. Must line up with topicPattern in the frcastr data source config:
+//   "topicPattern":       "frcastr/{device}/state"
+//   "statusTopicPattern": "frcastr/{device}/status"
+#define MQTT_TOPIC_ROOT      "frcastr"
+
+// ── Sensor ───────────────────────────────────────────────────────────────────
+// Pick exactly one.
+#define SENSOR_SHT3X
+// #define SENSOR_DHT22
+
+#ifdef SENSOR_SHT3X
+  #define SHT3X_ADDRESS      0x44    // 0x45 when ADDR is tied high
+  #define I2C_SDA_PIN        8
+  #define I2C_SCL_PIN        9
+#endif
+
+#ifdef SENSOR_DHT22
+  #define DHT_PIN            4
+#endif
+
+// ── Timing ───────────────────────────────────────────────────────────────────
+#define PUBLISH_INTERVAL_MS  30000   // 30 s

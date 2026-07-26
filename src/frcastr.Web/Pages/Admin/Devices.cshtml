@@ -1,0 +1,171 @@
+@page
+@model frcastr.Web.Pages.Admin.DevicesModel
+@{
+    ViewData["Title"] = "Devices";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Devices</h1>
+    </div>
+
+    @if (!Model.Devices.Any())
+    {
+        <div class="alert alert-info">
+            <p class="mb-1">No devices have reported yet.</p>
+            <p class="mb-0 small">
+                Devices register themselves the first time they publish. Add an MQTT data source with a
+                <code>topicPattern</code> such as <code>frcastr/{device}/state</code> under
+                <a asp-page="/Admin/DataSources">Data Sources</a>, then power on a sensor.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Device ID</th><th>Name</th><th>Location</th><th>Model</th>
+                        <th>Firmware</th><th>Source</th><th>Last Seen</th>
+                        <th>Primary</th><th>Enabled</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var d in Model.Devices)
+                    {
+                        var stale = Model.IsStale(d);
+                        <tr id="dev-@d.Id" data-device='@System.Text.Json.JsonSerializer.Serialize(new { d.Id, d.Name, d.Location, d.Model, d.IsEnabled, d.OfflineThresholdMinutes }, frcastr.Web.Pages.Admin.DevicesModel.JsonOpts)'>
+                            <td class="small font-monospace">@d.DeviceId</td>
+                            <td class="fw-semibold">@d.Name</td>
+                            <td class="small">@(string.IsNullOrWhiteSpace(d.Location) ? "–" : d.Location)</td>
+                            <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(d.Model) ? "–" : d.Model)</td>
+                            <td class="small text-body-secondary">@(string.IsNullOrWhiteSpace(d.FirmwareVersion) ? "–" : d.FirmwareVersion)</td>
+                            <td class="small">
+                                @(d.SourceId is not null && Model.SourceNames.TryGetValue(d.SourceId.Value, out var sn) ? sn : "–")
+                            </td>
+                            <td class="small">
+                                @if (d.LastSeenAt is null)
+                                {
+                                    <span class="badge text-bg-secondary">never</span>
+                                }
+                                else if (stale || !d.IsOnline)
+                                {
+                                    <span class="badge text-bg-danger" title="@d.LastSeenAt?.ToString("u")">
+                                        @(!d.IsOnline ? "offline" : "stale") — @d.LastSeenAt?.ToString("MM/dd HH:mm")
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="text-body-secondary" title="@d.LastSeenAt?.ToString("u")">@d.LastSeenAt?.ToString("MM/dd HH:mm")</span>
+                                }
+                            </td>
+                            <td>
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input" type="checkbox" @(d.IsPrimary ? "checked" : "")
+                                           onchange="setPrimary(@d.Id, this.checked)"
+                                           title="The primary device also answers to the bare channel name (e.g. temperature.outdoor)" />
+                                </div>
+                            </td>
+                            <td>@(d.IsEnabled ? "✓" : "–")</td>
+                            <td class="text-end">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" onclick="openEditModal(@d.Id)">Edit</button>
+                                    <button class="btn btn-outline-secondary" onclick="toggleDevice(@d.Id)">@(d.IsEnabled ? "Disable" : "Enable")</button>
+                                    <button class="btn btn-outline-danger" onclick="deleteDevice(@d.Id, '@d.Name.Replace("'", "\\'")')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <p class="small text-body-secondary">
+            Devices report under canonical channel names scoped by device, e.g.
+            <code>temperature.indoor@@greenhouse-01</code>. Marking a device <strong>primary</strong> also
+            publishes its readings under the bare channel name so existing widgets keep working.
+            Stale threshold defaults to @Model.GlobalThresholdMinutes minutes.
+        </p>
+    }
+</div>
+
+<div class="modal fade" id="deviceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Device</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="deviceId" value="0" />
+                <div class="row g-3">
+                    <div class="col-12"><label class="form-label">Name</label>
+                        <input type="text" class="form-control" id="deviceName" /></div>
+                    <div class="col-12"><label class="form-label">Location</label>
+                        <input type="text" class="form-control" id="deviceLocation" placeholder="Greenhouse" /></div>
+                    <div class="col-md-6"><label class="form-label">Model</label>
+                        <input type="text" class="form-control" id="deviceModel" placeholder="ESP32-S3" /></div>
+                    <div class="col-md-6"><label class="form-label">Offline after (minutes)</label>
+                        <input type="number" min="0" class="form-control" id="deviceThreshold" />
+                        <div class="form-text">0 inherits the global setting (@Model.GlobalThresholdMinutes min).</div>
+                    </div>
+                    <div class="col-12"><div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="deviceEnabled" checked />
+                        <label class="form-check-label" for="deviceEnabled">Enabled</label>
+                    </div></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveDevice()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function openEditModal(id) {
+    const d = JSON.parse(document.getElementById('dev-' + id).dataset.device);
+    document.getElementById('deviceId').value = id;
+    document.getElementById('deviceName').value = d.name || '';
+    document.getElementById('deviceLocation').value = d.location || '';
+    document.getElementById('deviceModel').value = d.model || '';
+    document.getElementById('deviceThreshold').value = d.offlineThresholdMinutes || 0;
+    document.getElementById('deviceEnabled').checked = d.isEnabled;
+    new bootstrap.Modal('#deviceModal').show();
+}
+
+async function saveDevice() {
+    const id = parseInt(document.getElementById('deviceId').value);
+    const body = {
+        name: document.getElementById('deviceName').value,
+        location: document.getElementById('deviceLocation').value,
+        model: document.getElementById('deviceModel').value,
+        offlineThresholdMinutes: parseInt(document.getElementById('deviceThreshold').value) || 0,
+        isEnabled: document.getElementById('deviceEnabled').checked
+    };
+    const r = await fetch('/api/admin/devices/' + id, {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+}
+
+async function toggleDevice(id) {
+    await fetch('/api/admin/devices/' + id + '/toggle', { method: 'POST' });
+    location.reload();
+}
+
+async function setPrimary(id, primary) {
+    const r = await fetch('/api/admin/devices/' + id + '/primary?primary=' + primary, { method: 'POST' });
+    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+}
+
+async function deleteDevice(id, name) {
+    if (!confirm('Delete "' + name + '"? Its readings are kept but will no longer be attributed to a device.')) return;
+    await fetch('/api/admin/devices/' + id, { method: 'DELETE' });
+    location.reload();
+}
+</script>
+}

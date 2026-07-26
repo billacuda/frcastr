@@ -57,7 +57,7 @@ public class DailyAggregationBackgroundService(
                 .Where(a => a.Granularity == AggregationGranularity.Hourly && a.PeriodStart < hourlyCutoff)
                 .GroupBy(a => new
                 {
-                    a.ChannelName, a.SourceId, a.Unit,
+                    a.ChannelName, a.SourceId, a.DeviceId, a.Unit,
                     Year = a.PeriodStart.Year,
                     Month = a.PeriodStart.Month,
                     Day = a.PeriodStart.Day
@@ -77,6 +77,7 @@ public class DailyAggregationBackgroundService(
             {
                 ChannelName = g.Key.ChannelName,
                 SourceId = g.Key.SourceId,
+                DeviceId = g.Key.DeviceId,
                 Granularity = AggregationGranularity.Daily,
                 PeriodStart = new DateTime(g.Key.Year, g.Key.Month, g.Key.Day, 0, 0, 0, DateTimeKind.Utc),
                 Avg = g.TotalCount > 0 ? g.WeightedSum / g.TotalCount : 0,
@@ -93,13 +94,13 @@ public class DailyAggregationBackgroundService(
             var existing = (await db.WeatherReadingAggregates
                 .Where(a => a.Granularity == AggregationGranularity.Daily
                          && a.PeriodStart >= minBucket && a.PeriodStart <= maxBucket)
-                .Select(a => new { a.ChannelName, a.SourceId, a.PeriodStart })
+                .Select(a => new { a.ChannelName, a.SourceId, a.DeviceId, a.PeriodStart })
                 .ToListAsync(ct))
-                .Select(x => (x.ChannelName, x.SourceId, x.PeriodStart))
+                .Select(x => (x.ChannelName, x.SourceId, x.DeviceId, x.PeriodStart))
                 .ToHashSet();
 
             var toInsert = dailyRows
-                .Where(a => !existing.Contains((a.ChannelName, a.SourceId, a.PeriodStart)))
+                .Where(a => !existing.Contains((a.ChannelName, a.SourceId, a.DeviceId, a.PeriodStart)))
                 .ToList();
 
             await using var tx = await db.Database.BeginTransactionAsync(ct);

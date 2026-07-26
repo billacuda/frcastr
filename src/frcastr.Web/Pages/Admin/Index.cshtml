@@ -8,7 +8,7 @@
     <h1 class="h3 mb-4">Administration</h1>
 
     <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-4 col-xl">
             <a class="card text-decoration-none text-body" asp-page="/Admin/Users">
                 <div class="card-body text-center py-3">
                     <div class="display-6 fw-bold">@Model.UserCount</div>
@@ -16,7 +16,7 @@
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-4 col-xl">
             <a class="card text-decoration-none text-body" asp-page="/Admin/DataSources">
                 <div class="card-body text-center py-3">
                     <div class="display-6 fw-bold">@Model.SourceCount</div>
@@ -24,7 +24,15 @@
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-4 col-xl">
+            <a class="card text-decoration-none text-body" asp-page="/Admin/Devices">
+                <div class="card-body text-center py-3">
+                    <div class="display-6 fw-bold">@Model.DeviceCount</div>
+                    <div class="small text-body-secondary">Devices</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6 col-md-4 col-xl">
             <a class="card text-decoration-none text-body" asp-page="/Admin/Widgets">
                 <div class="card-body text-center py-3">
                     <div class="display-6 fw-bold">@Model.WidgetCount</div>
@@ -32,7 +40,7 @@
                 </div>
             </a>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-4 col-xl">
             <a class="card text-decoration-none text-body" asp-page="/Admin/Webhooks">
                 <div class="card-body text-center py-3">
                     <div class="display-6 fw-bold">@Model.WebhookCount</div>
@@ -48,6 +56,7 @@
                 <div class="card-header small fw-semibold">Quick Links</div>
                 <div class="list-group list-group-flush">
                     <a class="list-group-item list-group-item-action" asp-page="/Admin/DataSources">Data Sources</a>
+                    <a class="list-group-item list-group-item-action" asp-page="/Admin/Devices">Devices</a>
                     <a class="list-group-item list-group-item-action" asp-page="/Admin/Widgets">Widgets</a>
                     <a class="list-group-item list-group-item-action" asp-page="/Admin/Users">Users</a>
                     <a class="list-group-item list-group-item-action" asp-page="/Admin/Roles">Roles &amp; Permissions</a>

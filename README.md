@@ -56,10 +56,53 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 | Push | HTTP `POST /api/ingest` with `X-Api-Key` header |
 | Pull | Periodic HTTP fetch (OpenWeatherMap, generic JSON) |
 | Forecast | NWS, OpenWeatherMap, weatherapi.com, generic JSON proxy |
-| MQTT | Subscribe to broker topics with topic→channel mapping |
+| MQTT | Subscribe to broker topics; multi-device via topic patterns, JSON or bare-decimal payloads |
 | DataSink | Upload to Weather Underground, PWSWeather, or custom endpoint |
 | Alerts | NWS severe weather alerts |
 | AirQuality | OpenWeatherMap Air Pollution API or push ingest |
+
+## MQTT devices
+
+One MQTT data source serves any number of sensor devices. A `topicPattern` extracts the device id
+from each topic, and devices register themselves the first time they publish — no restart, and no
+per-device configuration.
+
+```json
+{
+  "broker": "192.168.1.50",
+  "port": 1883,
+  "topicPattern": "frcastr/{device}/state",
+  "statusTopicPattern": "frcastr/{device}/status",
+  "autoRegisterDevices": true,
+  "username": "", "password": "",
+  "fieldMapping": {
+    "temperature": { "channel": "temperature.indoor", "unit": "°C" },
+    "humidity":    { "channel": "humidity.indoor",    "unit": "%"  }
+  },
+  "calibrationOffsets": { "temperature.indoor": -0.3 },
+  "channelBounds": { "temperature.indoor": { "min": -20, "max": 60 } }
+}
+```
+
+**Device contract**
+
+| | |
+|---|---|
+| State topic | `frcastr/<device-id>/state` |
+| State payload | `{"temperature":21.42,"humidity":55.10,"firmware":"1.0.0"}` |
+| Status topic | `frcastr/<device-id>/status` (retained, MQTT last will) |
+| Status payload | `online` / `offline` |
+
+Only fields listed in `fieldMapping` are stored. A bare decimal payload also works
+(`frcastr/{device}/{measure}` with `21.4`), as does the legacy exact-topic `channelMapping`.
+
+Readings are addressed as `temperature.indoor@greenhouse-01`; channel names stay canonical so
+sanity bounds and calculated channels apply per device. Mark one device **primary** under
+**Admin → Devices** for its readings to also answer to the bare channel name that widgets bind to
+by default.
+
+Reference ESP32-S3 firmware implementing this contract lives in
+[`esp32/frcastr-sensor/`](esp32/frcastr-sensor/).
 
 ## Dashboard widgets
 

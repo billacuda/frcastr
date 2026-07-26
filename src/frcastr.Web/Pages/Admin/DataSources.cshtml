@@ -87,6 +87,7 @@
                             <option value="open-meteo-current">Open-Meteo (current conditions)</option>
                             <option value="open-meteo">Open-Meteo (forecast)</option>
                             <option value="airnow">AirNow (air quality)</option>
+                            <option value="esp32-mqtt">ESP32 sensors over MQTT (multi-device)</option>
                         </select>
                         <div class="form-text">NWS uses your station's latitude/longitude. Leave lat/lon blank to inherit from Station settings.</div>
                     </div>
@@ -177,7 +178,22 @@ const PROVIDER_PRESETS = {
     'weatherapi':         { type: 'Forecast',   config: { provider: 'weatherapi', apiKey: '' } },
     'open-meteo-current': { type: 'Pull',       config: { provider: 'openmeteo' } },
     'open-meteo':         { type: 'Forecast',   config: { provider: 'openmeteo' } },
-    'airnow':             { type: 'AirQuality', config: { provider: 'airnow', apiKey: '' } }
+    'airnow':             { type: 'AirQuality', config: { provider: 'airnow', apiKey: '' } },
+    // Devices auto-register from the {device} segment of topicPattern; one source serves them all.
+    'esp32-mqtt':         { type: 'Mqtt', config: {
+        broker: '192.168.1.50',
+        port: 1883,
+        topicPattern: 'frcastr/{device}/state',
+        statusTopicPattern: 'frcastr/{device}/status',
+        autoRegisterDevices: true,
+        username: '',
+        password: '',
+        fieldMapping: {
+            temperature: { channel: 'temperature.indoor', unit: '°C' },
+            humidity:    { channel: 'humidity.indoor',    unit: '%'  },
+            battery:     { channel: 'battery.voltage',    unit: 'V'  }
+        }
+    } }
 };
 
 function applyPreset() {

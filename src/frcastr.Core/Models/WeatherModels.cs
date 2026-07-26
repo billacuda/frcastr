@@ -19,7 +19,10 @@ public record CurrentReading(
     string Unit,
     DateTime Timestamp,
     int SourceId,
-    bool IsCalculated = false);
+    bool IsCalculated = false,
+    int? DeviceId = null,
+    string? DeviceKey = null,
+    string? DeviceName = null);
 
 public record TrendResult(TrendDirection Direction, decimal Delta);
 
@@ -28,7 +31,8 @@ public record HistoryDataPoint(
     string ChannelName,
     decimal Value,
     string Unit,
-    int? SourceId);
+    int? SourceId,
+    int? DeviceId = null);
 
 public record AggregateDataPoint(
     DateTime PeriodStart,
@@ -38,7 +42,8 @@ public record AggregateDataPoint(
     decimal Max,
     int Count,
     string Unit,
-    int? SourceId);
+    int? SourceId,
+    int? DeviceId = null);
 
 public record HistoryResult(
     IReadOnlyList<HistoryDataPoint> RawPoints,

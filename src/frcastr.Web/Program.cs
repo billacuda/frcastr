@@ -10,6 +10,7 @@ using frcastr.Infrastructure.Repositories;
 using frcastr.Infrastructure.Services;
 using frcastr.Web.Health;
 using frcastr.Web.Middleware;
+using frcastr.Web.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -74,6 +75,7 @@ builder.Services.AddScoped<IForecastService, ForecastService>();
 builder.Services.AddScoped<ISunriseSunsetService, SunriseSunsetService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddSingleton<IDataSourceStatusService, DataSourceStatusService>();
+builder.Services.AddScoped<IWeatherCacheInvalidator, OutputCacheWeatherInvalidator>();
 
 // ── Adapters ──────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IForecastAdapter, NwsAdapter>();

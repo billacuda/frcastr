@@ -4,6 +4,7 @@ using System.Text.Json;
 using frcastr.Core.Enums;
 using frcastr.Core.Interfaces;
 using frcastr.Infrastructure.Data;
+using frcastr.Infrastructure.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MQTTnet;
@@ -149,14 +150,16 @@ public class DataSourceTestService(
         if (string.IsNullOrWhiteSpace(source.Config))
             return new DataSourceTestResult(false, "No MQTT configuration.", null);
 
-        MqttSourceConfig? cfg;
-        try { cfg = JsonSerializer.Deserialize<MqttSourceConfig>(source.Config, JsonOpts); }
-        catch { return new DataSourceTestResult(false, "Invalid MQTT config JSON.", null); }
+        var cfg = MqttSourceConfig.TryParse(source.Config);
+        if (cfg is null)
+            return new DataSourceTestResult(false, "Invalid MQTT config JSON.", null);
 
-        if (cfg is null || string.IsNullOrWhiteSpace(cfg.Broker))
+        if (string.IsNullOrWhiteSpace(cfg.Broker))
             return new DataSourceTestResult(false, "MQTT broker address is not configured.", null);
 
+        var pattern = cfg.GetTopicPattern();
         var messages = new List<object>();
+        var devices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(10));
 
@@ -167,7 +170,8 @@ public class DataSourceTestService(
             client = factory.CreateMqttClient();
 
             var optionsBuilder = new MqttClientOptionsBuilder()
-                .WithTcpServer(cfg.Broker, cfg.Port > 0 ? cfg.Port : 1883);
+                .WithClientId($"frcastr-test-{Guid.NewGuid():N}"[..23])
+                .WithTcpServer(cfg.Broker, cfg.EffectivePort);
             if (!string.IsNullOrWhiteSpace(cfg.Username))
                 optionsBuilder.WithCredentials(cfg.Username, cfg.Password);
 
@@ -175,10 +179,31 @@ public class DataSourceTestService(
             {
                 if (messages.Count < 5)
                 {
+                    var topic = e.ApplicationMessage.Topic;
                     var payload = e.ApplicationMessage.Payload.Length > 0
                         ? Encoding.UTF8.GetString(e.ApplicationMessage.Payload)
                         : "";
-                    messages.Add(new { topic = e.ApplicationMessage.Topic, payload });
+
+                    // Report what the ingestion path would actually make of this message, so a
+                    // mismatched topicPattern or fieldMapping is visible from the admin UI.
+                    string? deviceId = null;
+                    string? measure = null;
+                    var matched = pattern?.TryMatch(topic, out deviceId, out measure) ?? false;
+
+                    var parsed = MqttPayloadParser.Parse(cfg, topic, measure, payload);
+                    if (!string.IsNullOrWhiteSpace(parsed.DeviceId)) deviceId = parsed.DeviceId;
+                    if (deviceId is not null) devices.Add(deviceId);
+
+                    messages.Add(new
+                    {
+                        topic,
+                        payload,
+                        matchesPattern = pattern is null ? (bool?)null : matched,
+                        device = deviceId,
+                        channels = parsed.Values
+                            .Select(v => new { channel = v.Channel, value = v.Value, unit = v.Unit })
+                            .ToList()
+                    });
                 }
                 return Task.CompletedTask;
             };
@@ -186,7 +211,7 @@ public class DataSourceTestService(
             await client.ConnectAsync(optionsBuilder.Build(), timeoutCts.Token);
 
             var subOptions = new MqttClientSubscribeOptionsBuilder()
-                .WithTopicFilter(new MqttTopicFilterBuilder().WithTopic(cfg.Topic ?? "#").Build())
+                .WithTopicFilter(new MqttTopicFilterBuilder().WithTopic(cfg.GetSubscribeFilter()).Build())
                 .Build();
             await client.SubscribeAsync(subOptions, timeoutCts.Token);
 
@@ -196,13 +221,26 @@ public class DataSourceTestService(
                 await Task.Delay(200, ct).ConfigureAwait(false);
 
             return new DataSourceTestResult(true, null,
-                new { connected = true, broker = cfg.Broker, messagesReceived = messages.Count, messages });
+                new
+                {
+                    connected = true, broker = cfg.Broker,
+                    subscribedTo = cfg.GetSubscribeFilter(),
+                    topicPattern = cfg.TopicPattern,
+                    devicesSeen = devices.OrderBy(d => d).ToList(),
+                    messagesReceived = messages.Count, messages
+                });
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             // Timed out — but we may still have collected messages
             return new DataSourceTestResult(true, "Timed out after 10s.",
-                new { connected = true, broker = cfg?.Broker, messagesReceived = messages.Count, messages });
+                new
+                {
+                    connected = true, broker = cfg.Broker,
+                    subscribedTo = cfg.GetSubscribeFilter(),
+                    devicesSeen = devices.OrderBy(d => d).ToList(),
+                    messagesReceived = messages.Count, messages
+                });
         }
         catch (Exception ex)
         {
@@ -270,12 +308,4 @@ public class DataSourceTestService(
         catch { return null; }
     }
 
-    private sealed class MqttSourceConfig
-    {
-        public string? Broker { get; init; }
-        public int Port { get; init; }
-        public string? Topic { get; init; }
-        public string? Username { get; init; }
-        public string? Password { get; init; }
-    }
 }

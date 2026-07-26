@@ -16,8 +16,10 @@ public class WeatherDataService(
     public async Task<IReadOnlyDictionary<string, CurrentReading>> GetCurrentReadingsAsync(
         CancellationToken ct = default)
     {
+        // Latest reading per (channel, device) — grouping by channel alone would let one device
+        // overwrite another that reports the same canonical channel.
         var latestIds = await dbContext.WeatherReadings
-            .GroupBy(r => r.ChannelName)
+            .GroupBy(r => new { r.ChannelName, r.DeviceId })
             .Select(g => g.Max(r => r.Id))
             .ToListAsync(ct);
 
@@ -25,44 +27,89 @@ public class WeatherDataService(
             .Where(r => latestIds.Contains(r.Id))
             .ToListAsync(ct);
 
-        var result = rows.ToDictionary(
-            r => r.ChannelName,
-            r => new CurrentReading(r.ChannelName, r.Value, r.Unit, r.Timestamp, r.SourceId));
+        var deviceIds = rows.Where(r => r.DeviceId is not null)
+            .Select(r => r.DeviceId!.Value).Distinct().ToList();
+
+        var devices = deviceIds.Count == 0
+            ? []
+            : await dbContext.Devices
+                .Where(d => deviceIds.Contains(d.Id))
+                .Select(d => new { d.Id, d.DeviceId, d.Name, d.IsPrimary })
+                .ToDictionaryAsync(d => d.Id, ct);
+
+        var result = new Dictionary<string, CurrentReading>();
+
+        foreach (var r in rows)
+        {
+            if (r.DeviceId is null || !devices.TryGetValue(r.DeviceId.Value, out var device))
+            {
+                result[r.ChannelName] =
+                    new CurrentReading(r.ChannelName, r.Value, r.Unit, r.Timestamp, r.SourceId);
+                continue;
+            }
+
+            var reading = new CurrentReading(r.ChannelName, r.Value, r.Unit, r.Timestamp, r.SourceId,
+                IsCalculated: false, DeviceId: device.Id, DeviceKey: device.DeviceId, DeviceName: device.Name);
+
+            result[ChannelKey.Format(r.ChannelName, device.DeviceId)] = reading;
+
+            // The primary device also answers to the bare canonical key so widgets bound to
+            // "temperature.outdoor" keep working when the station's own sensor is a device.
+            if (device.IsPrimary)
+                result[r.ChannelName] = reading;
+        }
 
         AddCalculatedChannels(result);
+
+        foreach (var deviceKey in devices.Values.Select(d => d.DeviceId))
+            AddCalculatedChannels(result, deviceKey);
+
         return result;
     }
 
-    private static void AddCalculatedChannels(Dictionary<string, CurrentReading> channels)
+    private static void AddCalculatedChannels(
+        Dictionary<string, CurrentReading> channels, string? deviceKey = null)
     {
-        channels.TryGetValue("temperature.outdoor", out var tOut);
-        channels.TryGetValue("humidity.outdoor", out var hOut);
-        channels.TryGetValue("temperature.indoor", out var tIn);
-        channels.TryGetValue("humidity.indoor", out var hIn);
-        channels.TryGetValue("wind.speed", out var wind);
+        var suffix = string.IsNullOrWhiteSpace(deviceKey) ? "" : ChannelKey.Separator + deviceKey;
+        AddCalculatedChannelsCore(channels, suffix);
+    }
+
+    private static void AddCalculatedChannelsCore(
+        Dictionary<string, CurrentReading> channels, string suffix)
+    {
+        channels.TryGetValue("temperature.outdoor" + suffix, out var tOut);
+        channels.TryGetValue("humidity.outdoor" + suffix, out var hOut);
+        channels.TryGetValue("temperature.indoor" + suffix, out var tIn);
+        channels.TryGetValue("humidity.indoor" + suffix, out var hIn);
+        channels.TryGetValue("wind.speed" + suffix, out var wind);
+
+        // Derived channels inherit the device identity of the inputs they were computed from.
+        void Put(string channel, decimal value, DateTime ts, CurrentReading from) =>
+            channels[channel + suffix] = new CurrentReading(channel, value, "°C", ts, 0,
+                IsCalculated: true, DeviceId: from.DeviceId, DeviceKey: from.DeviceKey, DeviceName: from.DeviceName);
 
         if (tOut is not null && hOut is not null)
         {
             var ts = tOut.Timestamp > hOut.Timestamp ? tOut.Timestamp : hOut.Timestamp;
             var dp = DewPoint((double)tOut.Value, (double)hOut.Value);
-            channels["dewpoint.outdoor"] = new CurrentReading("dewpoint.outdoor", (decimal)dp, "°C", ts, 0, true);
+            Put("dewpoint.outdoor", (decimal)dp, ts, tOut);
 
             if (wind is not null)
             {
                 var feelsTs = ts > wind.Timestamp ? ts : wind.Timestamp;
                 var fl = FeelsLike((double)tOut.Value, (double)hOut.Value, (double)wind.Value);
-                channels["feelslike.outdoor"] = new CurrentReading("feelslike.outdoor", (decimal)fl, "°C", feelsTs, 0, true);
+                Put("feelslike.outdoor", (decimal)fl, feelsTs, tOut);
 
                 if ((double)tOut.Value <= 10 && (double)wind.Value >= 4.8)
                 {
                     var wc = WindChill((double)tOut.Value, (double)wind.Value);
-                    channels["windchill.outdoor"] = new CurrentReading("windchill.outdoor", (decimal)wc, "°C", feelsTs, 0, true);
+                    Put("windchill.outdoor", (decimal)wc, feelsTs, tOut);
                 }
 
                 if ((double)tOut.Value >= 27 && (double)hOut.Value >= 40)
                 {
                     var hi = HeatIndex((double)tOut.Value, (double)hOut.Value);
-                    channels["heatindex.outdoor"] = new CurrentReading("heatindex.outdoor", (decimal)hi, "°C", ts, 0, true);
+                    Put("heatindex.outdoor", (decimal)hi, ts, tOut);
                 }
             }
         }
@@ -71,19 +118,23 @@ public class WeatherDataService(
         {
             var ts = tIn.Timestamp > hIn.Timestamp ? tIn.Timestamp : hIn.Timestamp;
             var dp = DewPoint((double)tIn.Value, (double)hIn.Value);
-            channels["dewpoint.indoor"] = new CurrentReading("dewpoint.indoor", (decimal)dp, "°C", ts, 0, true);
+            Put("dewpoint.indoor", (decimal)dp, ts, tIn);
         }
     }
 
     // ── Trend ─────────────────────────────────────────────────────────────────
 
-    public async Task<TrendResult> GetTrendAsync(string channelName, int samples = 10,
+    public async Task<TrendResult> GetTrendAsync(string channelKey, int samples = 10,
         CancellationToken ct = default)
     {
         var threshold = await settings.GetDecimalAsync("Trend.ThresholdDegrees", 0.5m, ct);
 
+        var (channelName, deviceKey) = ChannelKey.Split(channelKey);
+        var deviceId = await ResolveDeviceIdAsync(deviceKey, ct);
+
         var readings = await dbContext.WeatherReadings
-            .Where(r => r.ChannelName == channelName)
+            .Where(r => r.ChannelName == channelName
+                     && (deviceId == null || r.DeviceId == deviceId))
             .OrderByDescending(r => r.Id)
             .Take(samples)
             .Select(r => r.Value)
@@ -104,11 +155,37 @@ public class WeatherDataService(
     // ── History (tiered routing) ──────────────────────────────────────────────
 
     public async Task<HistoryResult> GetHistoryAsync(
-        IEnumerable<string> channels, DateTime start, DateTime end,
+        IEnumerable<string> channelKeys, DateTime start, DateTime end,
         CancellationToken ct = default)
     {
-        var channelList = channels.ToList();
-        var allChannels = !channelList.Any();
+        // Keys may be device-scoped ("temperature.indoor@greenhouse-01"). Query on the canonical
+        // channel names, then filter to the requested devices.
+        var keyList = channelKeys.ToList();
+        var allChannels = keyList.Count == 0;
+        var split = keyList.Select(ChannelKey.Split).ToList();
+        var channelList = split.Select(s => s.ChannelName).Distinct().ToList();
+
+        var requestedDeviceKeys = split.Where(s => s.DeviceKey is not null)
+            .Select(s => s.DeviceKey!).Distinct().ToList();
+
+        // A device filter only applies when every requested key named a device; a mixed request
+        // (some bare, some device-scoped) must not drop the bare channels' station-wide rows.
+        var deviceScoped = !allChannels && split.All(s => s.DeviceKey is not null);
+
+        List<int> deviceIds = [];
+        if (requestedDeviceKeys.Count > 0)
+        {
+            deviceIds = await dbContext.Devices
+                .Where(d => requestedDeviceKeys.Contains(d.DeviceId))
+                .Select(d => d.Id)
+                .ToListAsync(ct);
+
+            // Named devices that do not exist: nothing can match.
+            if (deviceScoped && deviceIds.Count == 0)
+                return new HistoryResult([], []);
+        }
+
+        var filterDevices = deviceScoped && deviceIds.Count > 0;
         var rawRetention = await settings.GetIntAsync("Weather.RawRetentionDays", 30, ct);
         var hourlyRetention = await settings.GetIntAsync("Weather.HourlyRetentionDays", 365, ct);
 
@@ -125,13 +202,14 @@ public class WeatherDataService(
         {
             var rows = await dbContext.WeatherReadings
                 .Where(r => (allChannels || channelList.Contains(r.ChannelName))
+                         && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.Timestamp >= rawStart && r.Timestamp <= end)
                 .OrderBy(r => r.Timestamp)
-                .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId })
+                .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId, r.DeviceId })
                 .ToListAsync(ct);
 
             rawPoints.AddRange(rows.Select(r =>
-                new HistoryDataPoint(DateTime.SpecifyKind(r.Timestamp, DateTimeKind.Utc), r.ChannelName, r.Value, r.Unit, r.SourceId)));
+                new HistoryDataPoint(DateTime.SpecifyKind(r.Timestamp, DateTimeKind.Utc), r.ChannelName, r.Value, r.Unit, r.SourceId, r.DeviceId)));
         }
 
         // Hourly tier: [max(start, hourlyCutoff), min(end, rawCutoff)]
@@ -142,13 +220,14 @@ public class WeatherDataService(
             var rows = await dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Hourly
                          && (allChannels || channelList.Contains(r.ChannelName))
+                         && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.PeriodStart >= hourlyStart && r.PeriodStart < hourlyEnd)
                 .OrderBy(r => r.PeriodStart)
-                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId })
+                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId })
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
-                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
+                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId)));
         }
 
         // Daily tier: [start, min(end, hourlyCutoff)]
@@ -158,13 +237,14 @@ public class WeatherDataService(
             var rows = await dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Daily
                          && (allChannels || channelList.Contains(r.ChannelName))
+                         && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.PeriodStart >= start && r.PeriodStart < dailyEnd)
                 .OrderBy(r => r.PeriodStart)
-                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId })
+                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId })
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
-                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId)));
+                new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId)));
         }
 
         return new HistoryResult(rawPoints, aggPoints);
@@ -177,16 +257,18 @@ public class WeatherDataService(
         => await dbContext.WeatherChannelRecords.OrderBy(r => r.ChannelName).ToListAsync(ct);
 
     public async Task UpdateChannelRecordAsync(string channelName, decimal value,
-        DateTime timestamp, int sourceId, CancellationToken ct = default)
+        DateTime timestamp, int sourceId, CancellationToken ct = default, int? deviceId = null)
     {
+        // Records are scoped per device so one sensor's extreme never overwrites another's.
         var record = await dbContext.WeatherChannelRecords
-            .FirstOrDefaultAsync(r => r.ChannelName == channelName, ct);
+            .FirstOrDefaultAsync(r => r.ChannelName == channelName && r.DeviceId == deviceId, ct);
 
         if (record is null)
         {
             dbContext.WeatherChannelRecords.Add(new WeatherChannelRecord
             {
                 ChannelName = channelName,
+                DeviceId = deviceId,
                 AllTimeMax = value,
                 AllTimeMaxAt = timestamp,
                 AllTimeMaxSourceId = sourceId,
@@ -212,6 +294,16 @@ public class WeatherDataService(
         }
 
         await dbContext.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Maps a device key from a channel key ("greenhouse-01") to its Devices.Id.</summary>
+    private async Task<int?> ResolveDeviceIdAsync(string? deviceKey, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(deviceKey)) return null;
+        return await dbContext.Devices
+            .Where(d => d.DeviceId == deviceKey)
+            .Select(d => (int?)d.Id)
+            .FirstOrDefaultAsync(ct);
     }
 
     // ── Thermodynamic formulas (all units: °C, %, km/h) ──────────────────────

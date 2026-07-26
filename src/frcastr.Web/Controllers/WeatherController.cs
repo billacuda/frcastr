@@ -6,6 +6,8 @@ using frcastr.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
+using frcastr.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace frcastr.Web.Controllers;
 
@@ -17,7 +19,8 @@ public class WeatherController(
     IForecastService forecast,
     ISettingsService settings,
     IDataSourceStatusService statusService,
-    ISunriseSunsetService sunriseSunset) : ControllerBase
+    ISunriseSunsetService sunriseSunset,
+    ApplicationDbContext db) : ControllerBase
 {
     [HttpGet("current")]
     [OutputCache(PolicyName = "WeatherCurrent")]
@@ -26,7 +29,25 @@ public class WeatherController(
         var threshold = await settings.GetIntAsync("Alerts.SensorOfflineThresholdMinutes", 10, ct);
         var readings = await weatherData.GetCurrentReadingsAsync(ct);
         var stale = statusService.GetStaleChannels(threshold);
-        return Ok(new { readings, staleChannels = stale });
+
+        // staleChannels stays a flat array of channel keys, matching how readings are keyed and
+        // how widgets bind — the dashboard looks these up as plain strings.
+        var deviceIds = stale.Where(s => s.DeviceId is not null)
+            .Select(s => s.DeviceId!.Value).Distinct().ToList();
+
+        var deviceKeys = deviceIds.Count == 0
+            ? []
+            : await db.Devices
+                .Where(d => deviceIds.Contains(d.Id))
+                .ToDictionaryAsync(d => d.Id, d => d.DeviceId, ct);
+
+        var staleKeys = stale
+            .Select(s => s.DeviceId is not null && deviceKeys.TryGetValue(s.DeviceId.Value, out var key)
+                ? ChannelKey.Format(s.ChannelName, key)
+                : s.ChannelName)
+            .ToList();
+
+        return Ok(new { readings, staleChannels = staleKeys });
     }
 
     [HttpGet("trend/{channel}")]

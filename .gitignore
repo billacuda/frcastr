@@ -30,6 +30,10 @@ packages/
 project.lock.json
 project.fragment.lock.json
 
+# ESP32 firmware (per-device credentials + PlatformIO build output)
+esp32/**/include/config.h
+esp32/**/.pio/
+
 # OS
 .DS_Store
 Thumbs.db

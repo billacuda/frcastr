@@ -16,6 +16,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<WeatherReadingAggregate> WeatherReadingAggregates => Set<WeatherReadingAggregate>();
     public DbSet<WeatherChannelRecord>    WeatherChannelRecords    => Set<WeatherChannelRecord>();
     public DbSet<DataSource>              DataSources              => Set<DataSource>();
+    public DbSet<Device>                  Devices                  => Set<Device>();
     public DbSet<ForecastCache>           ForecastCaches           => Set<ForecastCache>();
     public DbSet<AlertCache>              AlertCaches              => Set<AlertCache>();
     public DbSet<WebhookAlert>            WebhookAlerts            => Set<WebhookAlert>();
@@ -69,9 +70,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.HasIndex(r => r.Timestamp);
             e.HasIndex(r => new { r.ChannelName, r.Timestamp });
             e.HasIndex(r => r.SourceId);
+            e.HasIndex(r => new { r.DeviceId, r.ChannelName, r.Timestamp });
             e.HasOne(r => r.Source).WithMany()
              .HasForeignKey(r => r.SourceId)
              .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(r => r.Device).WithMany()
+             .HasForeignKey(r => r.DeviceId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<WeatherReadingAggregate>(e =>
@@ -84,9 +89,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(a => a.Granularity).HasConversion<string>().HasMaxLength(10);
             e.HasIndex(a => new { a.ChannelName, a.Granularity, a.PeriodStart });
             e.HasIndex(a => a.SourceId);
+            e.HasIndex(a => new { a.DeviceId, a.ChannelName, a.Granularity, a.PeriodStart });
             e.HasOne(a => a.Source).WithMany()
              .HasForeignKey(a => a.SourceId)
              .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(a => a.Device).WithMany()
+             .HasForeignKey(a => a.DeviceId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<WeatherChannelRecord>(e =>
@@ -94,7 +103,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(r => r.ChannelName).IsRequired().HasMaxLength(100);
             e.Property(r => r.AllTimeMax).HasPrecision(10, 4);
             e.Property(r => r.AllTimeMin).HasPrecision(10, 4);
-            e.HasIndex(r => r.ChannelName).IsUnique();
+            // Records are per (channel, device). HasFilter(null) overrides EF's default
+            // "[DeviceId] IS NOT NULL" filter for nullable unique indexes: SQL Server treats NULLs
+            // as equal, so the unfiltered index still admits exactly one station-wide row per
+            // channel. With the default filter those rows would lose uniqueness entirely.
+            e.HasIndex(r => new { r.ChannelName, r.DeviceId }).IsUnique().HasFilter(null);
+            e.HasOne(r => r.Device).WithMany()
+             .HasForeignKey(r => r.DeviceId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<DataSource>(e =>
@@ -103,6 +119,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Type).HasConversion<string>().HasMaxLength(20);
             e.Property(s => s.Url).HasMaxLength(2000);
             e.HasIndex(s => s.Name).IsUnique();
+        });
+
+        builder.Entity<Device>(e =>
+        {
+            e.Property(d => d.DeviceId).IsRequired().HasMaxLength(100);
+            e.Property(d => d.Name).IsRequired().HasMaxLength(200);
+            e.Property(d => d.Location).HasMaxLength(200);
+            e.Property(d => d.Model).HasMaxLength(100);
+            e.Property(d => d.FirmwareVersion).HasMaxLength(50);
+            e.HasIndex(d => d.DeviceId).IsUnique();
+            e.HasIndex(d => d.LastSeenAt);
+            e.HasOne(d => d.Source).WithMany()
+             .HasForeignKey(d => d.SourceId)
+             .OnDelete(DeleteBehavior.SetNull);
         });
 
         builder.Entity<ForecastCache>(e =>

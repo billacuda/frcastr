@@ -9,6 +9,8 @@ public class WeatherReadingAggregate
     public AggregationGranularity Granularity { get; set; }
     public int SourceId { get; set; }
     public DataSource Source { get; set; } = null!;
+    public int? DeviceId { get; set; }
+    public Device? Device { get; set; }
     public string ChannelName { get; set; } = null!;
     public decimal Avg { get; set; }
     public decimal Min { get; set; }

@@ -4,6 +4,27 @@ All notable changes to frcastr are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Multi-device MQTT ingestion**: a single MQTT data source can now serve any number of sensor devices. A new `topicPattern` config key (e.g. `frcastr/{device}/state`) extracts a device id from the topic, and the subscribe filter is derived from it automatically when `topic` is omitted, so the subscription and the matcher cannot drift apart. Previously `channelMapping` was an exact-topic dictionary lookup, so wildcard subscriptions connected fine but every message was silently discarded unless its full literal topic was a key in the map — meaning each device needed its own data source row and hand-enumerated topics.
+- **`Device` entity**: devices auto-register on their first message (disable with `"autoRegisterDevices": false`) and carry a friendly name, location, model, firmware version, last-seen timestamp and per-device offline threshold. `WeatherReading`, `WeatherReadingAggregate` and `WeatherChannelRecord` gained a nullable `DeviceId`, so readings from non-device sources (NWS, OpenWeatherMap, Open-Meteo) are unaffected.
+- **Per-device channel keys**: readings are addressed as `temperature.indoor@greenhouse-01`, with channel names themselves staying canonical so sanity bounds and calculated channels (dewpoint, feels-like, wind chill, heat index) apply per device. `GetCurrentReadingsAsync` now groups by `(ChannelName, DeviceId)`; grouping by channel alone meant two devices reporting the same channel overwrote each other on the dashboard and shared one all-time record row.
+- **Primary device flag**: the primary device's readings are also published under the bare canonical channel name, so widgets bound to `temperature.outdoor` keep working when the station's own sensor becomes a device.
+- **JSON MQTT payloads**: a message may now carry several measurements (`{"temperature":21.4,"humidity":55.2}`) mapped to channels via a new `fieldMapping` config key. Bare-decimal payloads and the legacy `channelMapping`/`channelUnits` keys still work unchanged. Optional `deviceId` and `firmware` payload fields are consumed as device metadata.
+- **Admin → Devices page**: lists every registered device with last-seen status, and supports renaming, setting location/model, per-device offline thresholds, enable/disable, choosing the primary device, and deletion. Reachable from the admin dashboard cards and quick links.
+- **Device-level offline alerts**: `SensorOfflineBackgroundService` now also emails when a whole device stops reporting or publishes an `offline` last will. This check reads `Device.LastSeenAt` from the database, so unlike the in-memory per-channel check it still fires after an app restart.
+- **ESP32-S3 reference firmware** under `esp32/frcastr-sensor/`: a PlatformIO sketch (WiFi + MQTT with last will + SHT3x or DHT22) that implements the device contract. Flash the same sketch to every board, changing only `DEVICE_ID`.
+- **`esp32-mqtt` data source preset** that pre-fills the multi-device MQTT config template.
+- **Prefix sanity bounds**: channels outside the canonical set now fall back to family bounds (`temperature.*`, `humidity.*`, `dewpoint.*`, `pressure.*`, `battery.*`) instead of being completely unvalidated, plus a `battery.voltage` default.
+
+### Fixed
+- **New and edited MQTT sources needed an app restart**: `MqttBackgroundService` only re-scanned for sources when it held zero clients (`if (_clients.Count == 0)`), and failed clients were never removed from the list, so once any one source connected no source added afterwards was ever picked up. The service now reconciles its live clients against the database every 30 seconds — connecting new sources, dropping removed or disabled ones, and reconnecting those whose config changed.
+- **MQTT config edits were ignored until restart**: the channel mapping was captured in the message-handler closure at connect time, so changes saved in Admin had no effect on a running connection. Config is now read from the reconciled source entry on each message.
+- **MQTT readings misparsed on comma-decimal servers**: `decimal.TryParse` used the current culture, so a sensor publishing `21.4` was read as `214` where the server locale uses a comma decimal separator. Parsing is now invariant.
+- **MQTT clients were never disconnected on shutdown**: the cleanup loop sat after a `while (await timer.WaitForNextTickAsync(stoppingToken))` that throws on stop rather than returning false, so it was unreachable. It now runs in a `finally`.
+- **MQTT readings could sit up to 15 s stale on the dashboard**: the ingestion path never evicted the `weather-current` output cache tag, unlike the HTTP ingest endpoint. It now does, via a new `IWeatherCacheInvalidator` abstraction that keeps the Infrastructure project free of an ASP.NET Core dependency.
+- **MQTT sources had no client id**, so broker logs showed only random GUIDs. Each connection now uses `frcastr-<sourceId>-<random>`.
+- **Admin Test button understated MQTT config problems**: it used its own copy of the config model that ignored `channelMapping` and `channelUnits`. Both paths now share one `MqttSourceConfig`, and the test result reports the filter it subscribed to, whether each message matched `topicPattern`, the device ids seen, and the channels each payload resolved to.
+
 ## [0.4.2] - 2026-07-07
 
 ### Fixed
