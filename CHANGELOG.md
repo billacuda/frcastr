@@ -2,6 +2,16 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.6.3] - 2026-07-27
+
+### Changed
+- **Build against .NET 10.0.10** — bumped the pinned `Microsoft.EntityFrameworkCore.*`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.AspNetCore.Identity.UI` and `Microsoft.AspNetCore.OpenApi` package references from 10.0.9 to 10.0.10, and the `dotnet-ef` local tool in `.config/dotnet-tools.json` to match. The direct `Microsoft.OpenApi` 2.11.0 pin from 0.6.2 stays and is still doing work: `Microsoft.AspNetCore.OpenApi 10.0.10` still declares the vulnerable `Microsoft.OpenApi 2.0.0` transitively.
+
+## [0.6.2] - 2026-07-26
+
+### Security
+- **Pinned `Microsoft.OpenApi` to 2.11.0** to clear CVE-2026-49451 (GHSA-v5pm-xwqc-g5wc, high / CVSS 7.5): a circular schema reference sends the document reader into uncontrolled recursion and terminates the process by stack overflow. The vulnerable 2.0.0 arrived transitively through `Microsoft.AspNetCore.OpenApi 10.0.9`, and upgrading that package does not help — even its newest patch still declares `Microsoft.OpenApi 2.0.0` — so the fix is a direct reference in `frcastr.Web`. The advisory patches both the 2.x line (2.7.5) and the 3.x line (3.5.4); 2.x is the one ASP.NET Core 10 is built and tested against, and 3.x is a major release adding OpenAPI 3.1 support, so this stays on 2.x. Real exposure was theoretical: frcastr only *generates* an OpenAPI document from its own endpoints and never parses one supplied by anyone, and the flaw is in the reader.
+
 ## [0.6.1] - 2026-07-26
 
 ### Fixed
