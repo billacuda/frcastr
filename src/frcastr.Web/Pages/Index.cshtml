@@ -39,6 +39,7 @@
                         <option value="16">Air Quality</option>
                         <option value="17">Radar</option>
                         <option value="18">Hourly Forecast</option>
+                        <option value="19">Water Temperature</option>
                     </select>
                 </div>
                 <div class="mb-3">
@@ -73,6 +74,24 @@
                             <div class="col"><label class="form-label">Zoom</label><input type="number" min="1" max="18" class="form-control" id="awRadarZoom" value="5" /></div>
                             <div class="col"><label class="form-label">Opacity</label><input type="number" min="0" max="1" step="0.1" class="form-control" id="awRadarOpacity" value="0.6" /></div>
                         </div>
+                    </div>
+                    <div id="awSimpleWater" style="display:none">
+                        <div class="mb-2"><label class="form-label">Channel</label>
+                            <select class="form-select" id="awWaterChannel"></select></div>
+                        <label class="form-label mb-1">
+                            Animation bands (&deg;<span id="awWaterBandUnit">C</span>)
+                        </label>
+                        <div class="row g-2 mb-2">
+                            <div class="col"><label class="form-label small">Icy below</label>
+                                <input type="number" step="any" class="form-control" id="awBandicy" /></div>
+                            <div class="col"><label class="form-label small">Cool below</label>
+                                <input type="number" step="any" class="form-control" id="awBandcool" /></div>
+                            <div class="col"><label class="form-label small">Steamy at</label>
+                                <input type="number" step="any" class="form-control" id="awBandwarm" /></div>
+                        </div>
+                        <p class="text-body-secondary small mb-0">
+                            Below the first is icy, then cool, then normal water, and steamy at or above the last.
+                        </p>
                     </div>
                     <div id="awSimpleDatetime" style="display:none" class="mb-3">
                         <label class="form-label">Time Format</label>
@@ -150,6 +169,24 @@
                             <div class="col"><label class="form-label">Opacity</label><input type="number" min="0" max="1" step="0.1" class="form-control" id="ewRadarOpacity" value="0.6" /></div>
                         </div>
                     </div>
+                    <div id="ewSimpleWater" style="display:none">
+                        <div class="mb-2"><label class="form-label">Channel</label>
+                            <select class="form-select" id="ewWaterChannel"></select></div>
+                        <label class="form-label mb-1">
+                            Animation bands (&deg;<span id="ewWaterBandUnit">C</span>)
+                        </label>
+                        <div class="row g-2 mb-2">
+                            <div class="col"><label class="form-label small">Icy below</label>
+                                <input type="number" step="any" class="form-control" id="ewBandicy" /></div>
+                            <div class="col"><label class="form-label small">Cool below</label>
+                                <input type="number" step="any" class="form-control" id="ewBandcool" /></div>
+                            <div class="col"><label class="form-label small">Steamy at</label>
+                                <input type="number" step="any" class="form-control" id="ewBandwarm" /></div>
+                        </div>
+                        <p class="text-body-secondary small mb-0">
+                            Below the first is icy, then cool, then normal water, and steamy at or above the last.
+                        </p>
+                    </div>
                     <div id="ewSimpleDatetime" style="display:none" class="mb-3">
                         <label class="form-label">Time Format</label>
                         <select class="form-select" id="ewTimeFormat">
@@ -183,6 +220,50 @@
     </div>
 </div>
 
+@* ── Test mode ──
+   Administrators only, gated here rather than in JavaScript: a non-admin is never sent the panel
+   or the script, so window.TestMode does not exist and the dashboard's override hook is
+   unreachable. Simulated readings are never recorded — see wwwroot/js/test-mode.js. *@
+@if (User.IsInRole("Administrator"))
+{
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="testModePanel" style="width:min(420px,100vw)">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title">Test Mode</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body">
+            <p class="small text-body-secondary">
+                Simulated readings, drawn over the real ones in this browser only. Nothing is sent to
+                the server and nothing is recorded; other viewers keep seeing live weather.
+            </p>
+
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="tmActive" />
+                <label class="form-check-label" for="tmActive">Test mode active</label>
+            </div>
+
+            <label class="form-label mb-1">Scenarios</label>
+            <div class="d-flex flex-wrap gap-1 mb-3" id="tmScenarios"></div>
+
+            <label class="form-label mb-1">Channel values</label>
+            <div class="form-text mt-0 mb-2">
+                Any channel name works, including ones no sensor reports yet. Temperatures are in
+                &deg;C, matching how readings are stored.
+            </div>
+            <div id="tmRows" class="vstack gap-2"></div>
+            <datalist id="tmChannelList"></datalist>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                    onclick="TestMode.addRow('', '')">Add channel</button>
+
+            <hr />
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary btn-sm" onclick="TestMode.applyPanel()">Apply</button>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="TestMode.clearAll()">Clear all</button>
+            </div>
+        </div>
+    </div>
+}
+
 <script>
 window.frcastrConfig = {
     pollIntervalSeconds: @Model.PollIntervalSeconds,
@@ -200,5 +281,24 @@ window.frcastrConfig = {
 
 @section Scripts {
 <script src="~/js/weather-widgets.js" asp-append-version="true"></script>
+@if (User.IsInRole("Administrator"))
+{
+    <script src="~/js/test-mode.js" asp-append-version="true"></script>
+    <script>
+        // Scenario buttons are built from the module so the list lives in one place.
+        document.addEventListener('DOMContentLoaded', function () {
+            var host = document.getElementById('tmScenarios');
+            if (!host || !window.TestMode) return;
+            TestMode.scenarioNames().forEach(function (name) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'btn btn-sm btn-outline-secondary';
+                b.textContent = name;
+                b.onclick = function () { TestMode.applyScenario(name); };
+                host.appendChild(b);
+            });
+        });
+    </script>
+}
 <script src="~/js/dashboard.js" asp-append-version="true"></script>
 }

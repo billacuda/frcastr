@@ -9,6 +9,26 @@
         <h1 class="h3 mb-0 me-auto">Devices</h1>
     </div>
 
+    @if (Model.SharedChannels.Any())
+    {
+        <div class="alert alert-warning">
+            <p class="mb-1 fw-semibold">Two devices are reporting the same channel.</p>
+            <ul class="mb-1 small">
+                @foreach (var (channel, deviceNames) in Model.SharedChannels)
+                {
+                    <li><code>@channel</code> is reported by @string.Join(" and ", deviceNames)</li>
+                }
+            </ul>
+            <p class="mb-0 small">
+                Their readings share one canonical channel, so all-time records overwrite each other
+                and the history graph draws them as one series unless you separate them. Set a
+                channel override on <strong>Edit</strong> — for example
+                <code>temperature</code> → <code>temperature.outdoor</code> — and accept the
+                suggested re-key so the existing rows move with it.
+            </p>
+        </div>
+    }
+
     @if (!Model.Devices.Any())
     {
         <div class="alert alert-info">
@@ -155,6 +175,7 @@
 </div>
 
 @section Scripts {
+<script src="~/js/admin-api.js" asp-append-version="true"></script>
 <script>
 function escAttr(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -296,19 +317,16 @@ async function saveDevice() {
 }
 
 async function toggleDevice(id) {
-    await fetch('/api/admin/devices/' + id + '/toggle', { method: 'POST' });
-    location.reload();
+    await adminFetch('/api/admin/devices/' + id + '/toggle', { method: 'POST' });
 }
 
 async function setPrimary(id, primary) {
-    const r = await fetch('/api/admin/devices/' + id + '/primary?primary=' + primary, { method: 'POST' });
-    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+    await adminFetch('/api/admin/devices/' + id + '/primary?primary=' + primary, { method: 'POST' });
 }
 
 async function deleteDevice(id, name) {
     if (!confirm('Delete "' + name + '"? Its readings are kept but will no longer be attributed to a device.')) return;
-    await fetch('/api/admin/devices/' + id, { method: 'DELETE' });
-    location.reload();
+    await adminFetch('/api/admin/devices/' + id, { method: 'DELETE' });
 }
 </script>
 }

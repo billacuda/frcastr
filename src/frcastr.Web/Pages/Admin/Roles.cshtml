@@ -61,6 +61,7 @@
 </div>
 
 @section Scripts {
+<script src="~/js/admin-api.js" asp-append-version="true"></script>
 <script>
 async function savePerms(roleId, btn) {
     const table = document.querySelector('table[data-role-id="' + roleId + '"]');
@@ -91,8 +92,7 @@ async function addRole() {
 
 async function deleteRole(id, name) {
     if (!confirm('Delete role "' + name + '"?')) return;
-    await fetch('/api/admin/roles/' + id, { method: 'DELETE' });
-    location.reload();
+    await adminFetch('/api/admin/roles/' + id, { method: 'DELETE' });
 }
 </script>
 }

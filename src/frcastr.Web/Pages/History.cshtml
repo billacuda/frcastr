@@ -46,6 +46,7 @@
                 <thead>
                     <tr>
                         <th>Channel</th>
+                        <th>Device</th>
                         <th>All-Time High</th>
                         <th>Date</th>
                         <th>All-Time Low</th>
@@ -76,7 +77,10 @@
                     <a id="exportBtn" href="#" class="btn btn-success">Download CSV</a>
                 </div>
             </div>
-            <p class="text-muted small">CSV includes Timestamp, Channel, Value, Unit columns.</p>
+            <p class="text-muted small">
+                CSV includes Timestamp, Channel, Device, Value, Unit columns. Channels are exported
+                under their stored names, not their display labels.
+            </p>
         </div>
     </div>
 </div>
@@ -98,7 +102,64 @@ const CHART_PALETTE = [
 ];
 
 let historyChart = null;
-const channelColors = {};
+let channelLabels = {};
+
+// ── Remembered state ─────────────────────────────────────────────────────────
+// localStorage, the same store the dashboard uses for layouts. Every read is guarded: a channel
+// that goes away, or hand-edited storage, must not take the page down with it.
+const STORE = {
+    hidden: 'frcastr-history-hidden',
+    colors: 'frcastr-history-colors',
+    view:   'frcastr-history-view',
+    tab:    'frcastr-history-tab'
+};
+
+function readStore(key, fallback) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (e) { return fallback; }
+}
+
+function writeStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* private mode */ }
+}
+
+let hiddenSeries = readStore(STORE.hidden, []);
+const channelColors = readStore(STORE.colors, {});
+
+function setHidden(key, hidden) {
+    const i = hiddenSeries.indexOf(key);
+    if (hidden && i < 0) hiddenSeries.push(key);
+    if (!hidden && i >= 0) hiddenSeries.splice(i, 1);
+    writeStore(STORE.hidden, hiddenSeries);
+}
+
+// ── Channel keys and labels ──────────────────────────────────────────────────
+
+// "temperature.indoor" for station-wide points, "temperature.indoor@outdoor-01" for a device's.
+// Two sensors on one canonical channel used to land in the same bucket and draw as one line.
+function seriesKey(point, devices) {
+    const d = point.deviceId != null && devices ? devices[point.deviceId] : null;
+    return d ? point.channelName + '@@' + d.deviceKey : point.channelName;
+}
+
+function bareChannel(key) {
+    const i = key.indexOf('@@');
+    return i > 0 ? key.slice(0, i) : key;
+}
+
+// Most specific first: the exact key, then the canonical channel, then the key itself.
+function labelFor(key) {
+    return channelLabels[key] || channelLabels[bareChannel(key)] || key;
+}
+
+async function loadChannelLabels() {
+    try {
+        const r = await fetch('/api/weather/channel-labels');
+        channelLabels = r.ok ? await r.json() : {};
+    } catch (e) { channelLabels = {}; }
+}
 
 function hexToRgba(hex, alpha) {
     const r = parseInt(hex.slice(1,3),16);
@@ -158,6 +219,8 @@ function convertPoint(ch, rawValue) {
 async function loadHistory() {
     const period = document.getElementById('periodSelect').value;
     const date = document.getElementById('dateSelect').value;
+    writeStore(STORE.view, { period: period, date: date });
+
     const res = await fetch(`/api/weather/history?period=${period}&date=${date}`);
     if (!res.ok) return;
     const data = await res.json();
@@ -170,17 +233,22 @@ function renderHistoryCharts(data, period) {
 
     const rawPoints = data.rawPoints || [];
     const aggPoints = data.aggregatePoints || [];
+    const devices   = data.devices || {};
 
+    // Series are keyed per device; conversion still keys off the bare channel name, since it picks
+    // units and decimals by prefix and must not be handed a device suffix.
     const byChannel = {};
     rawPoints.forEach(p => {
-        (byChannel[p.channelName] = byChannel[p.channelName] || []).push({
+        const key = seriesKey(p, devices);
+        (byChannel[key] = byChannel[key] || []).push({
             x: new Date(utcTs(p.timestamp)),
             y: convertPoint(p.channelName, p.value)
         });
     });
     aggPoints.forEach(p => {
-        if (!byChannel[p.channelName]) {
-            (byChannel[p.channelName] = byChannel[p.channelName] || []).push({
+        const key = seriesKey(p, devices);
+        if (!byChannel[key]) {
+            (byChannel[key] = byChannel[key] || []).push({
                 x: new Date(utcTs(p.periodStart)),
                 y: convertPoint(p.channelName, p.avg)
             });
@@ -219,15 +287,17 @@ function renderHistoryCharts(data, period) {
     const timeUnit = timeUnitMap[period] || 'hour';
 
     const datasets = channels.map(ch => ({
-        label: ch,
-        unitLabel: channelConv(ch).unit,
+        label: labelFor(ch),
+        unitLabel: channelConv(bareChannel(ch)).unit,
         data: byChannel[ch],
         pointRadius: 3,
         pointHoverRadius: 5,
         backgroundColor: hexToRgba(channelColors[ch], 0.65),
         borderColor: channelColors[ch],
         borderWidth: 1,
-        hidden: false
+        // Restored rather than defaulted, so a hidden series stays hidden through a reload instead
+        // of flashing in and disappearing.
+        hidden: hiddenSeries.indexOf(ch) >= 0
     }));
 
     if (historyChart) { historyChart.destroy(); historyChart = null; }
@@ -267,13 +337,16 @@ function renderHistoryCharts(data, period) {
         const row = document.createElement('div');
         row.className = 'd-flex align-items-center gap-2 mb-1';
 
+        const device = deviceOf(ch, devices);
+
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.className = 'form-check-input flex-shrink-0 mt-0';
-        cb.checked = true;
+        cb.checked = hiddenSeries.indexOf(ch) < 0;
         cb.addEventListener('change', () => {
             historyChart.data.datasets[i].hidden = !cb.checked;
             historyChart.update();
+            setHidden(ch, !cb.checked);
         });
 
         const cp = document.createElement('input');
@@ -287,12 +360,15 @@ function renderHistoryCharts(data, period) {
             ds.backgroundColor = hexToRgba(cp.value, 0.65);
             ds.borderColor = cp.value;
             historyChart.update();
+            writeStore(STORE.colors, channelColors);
         });
 
+        // The label is what you recognize; the key is what you bind and export by, so it stays in
+        // the tooltip alongside the device's friendly name.
         const lbl = document.createElement('span');
         lbl.className = 'small text-truncate';
-        lbl.textContent = ch;
-        lbl.title = ch;
+        lbl.textContent = labelFor(ch);
+        lbl.title = device ? ch + ' — ' + device.deviceName : ch;
 
         row.appendChild(cb);
         row.appendChild(cp);
@@ -301,15 +377,26 @@ function renderHistoryCharts(data, period) {
     });
 }
 
+// The device behind a series key, for tooltips.
+function deviceOf(key, devices) {
+    const i = key.indexOf('@@');
+    if (i < 0) return null;
+    const deviceKey = key.slice(i + 1);
+    return Object.values(devices || {}).find(d => d.deviceKey === deviceKey) || null;
+}
+
 async function loadRecords() {
     const res = await fetch('/api/weather/records');
     if (!res.ok) return;
     const records = await res.json();
     document.getElementById('recordsLoading').classList.add('d-none');
     const tbody = document.getElementById('recordsBody');
+    // Records are stored per device, so without the device column two sensors on one channel
+    // render as duplicate-looking rows that differ only in their numbers.
     tbody.innerHTML = records.map(r => `
         <tr>
-            <td>${r.channelName}</td>
+            <td>${escHtml(labelFor(r.channelKey || r.channelName))}</td>
+            <td class="small text-body-secondary">${r.deviceName ? escHtml(r.deviceName) : '–'}</td>
             <td>${r.allTimeMax}</td>
             <td>${new Date(r.allTimeMaxAt).toLocaleDateString()}</td>
             <td>${r.allTimeMin}</td>
@@ -328,14 +415,45 @@ document.getElementById('exportPeriod').addEventListener('change', updateExportL
 document.getElementById('exportDate').addEventListener('change', updateExportLink);
 updateExportLink();
 
-// Load records when tab is shown
-document.querySelector('[data-bs-target="#tab-records"]').addEventListener('shown.bs.tab', () => {
-    if (document.getElementById('recordsLoading').classList.contains('d-none')) return;
-    loadRecords();
+function escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// Load records when tab is shown, and remember which tab that was.
+document.querySelectorAll('#historyTabs [data-bs-toggle="tab"]').forEach(btn => {
+    btn.addEventListener('shown.bs.tab', () => {
+        writeStore(STORE.tab, btn.dataset.bsTarget);
+        if (btn.dataset.bsTarget === '#tab-records' &&
+            !document.getElementById('recordsLoading').classList.contains('d-none')) {
+            loadRecords();
+        }
+    });
 });
 
-// Auto-load period on page load
-loadHistory();
+function restoreView() {
+    const view = readStore(STORE.view, null);
+    if (view && view.period) {
+        const p = document.getElementById('periodSelect');
+        if ([...p.options].some(o => o.value === view.period)) p.value = view.period;
+    }
+    if (view && view.date) document.getElementById('dateSelect').value = view.date;
+
+    const tab = readStore(STORE.tab, null);
+    if (tab && tab !== '#tab-period') {
+        const btn = document.querySelector('#historyTabs [data-bs-target="' + tab + '"]');
+        // show() fires shown.bs.tab, which lazy-loads the records table as usual.
+        if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+    }
+}
+
+// Labels first: the chart, the sidebar and the records table all render through labelFor().
+(async function init() {
+    await loadChannelLabels();
+    restoreView();
+    loadHistory();
+})();
 
 </script>
 }

@@ -42,6 +42,7 @@ public class WidgetsModel(ApplicationDbContext db) : PageModel
         { WidgetType.AirQuality,          "Air Quality" },
         { WidgetType.Radar,               "Radar" },
         { WidgetType.HourlyForecast,      "Hourly Forecast" },
+        { WidgetType.WaterTemperature,    "Water Temperature" },
     };
 
     public static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web)

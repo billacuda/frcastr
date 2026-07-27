@@ -51,6 +51,64 @@ public class AdminController(
         return Ok(result);
     }
 
+    // ── Channel labels ────────────────────────────────────────────────────────
+    //
+    // Display-only aliases. Channel names themselves are load-bearing — sanity bounds match on the
+    // "temperature." prefix, the calculated channels look up "temperature.indoor"/"outdoor" by
+    // exact name, and °C/°F conversion tests the same prefix — so a channel is relabeled for the
+    // UI rather than renamed. Widgets keep binding to the key, so clearing a label breaks nothing.
+
+    [HttpGet("channel-labels")]
+    public async Task<IActionResult> GetChannelLabels(CancellationToken ct)
+    {
+        var labels = await db.Settings
+            .Where(s => s.Key.StartsWith(WeatherController.ChannelLabelPrefix))
+            .Select(s => new { s.Key, s.Value })
+            .ToListAsync(ct);
+
+        return Ok(labels.ToDictionary(
+            l => l.Key[WeatherController.ChannelLabelPrefix.Length..], l => l.Value));
+    }
+
+    /// <summary>
+    /// Replaces the label for each key supplied. An empty or whitespace value removes the row
+    /// rather than storing a blank, so "no label" is one state rather than two.
+    /// </summary>
+    [HttpPut("channel-labels")]
+    public async Task<IActionResult> SetChannelLabels(
+        [FromBody] Dictionary<string, string?> labels, CancellationToken ct)
+    {
+        if (labels is null || labels.Count == 0) return BadRequest("No labels supplied.");
+
+        var changed = 0;
+        foreach (var (channelKey, rawLabel) in labels)
+        {
+            var key = (channelKey ?? "").Trim();
+            if (key.Length == 0) continue;
+            if (key.Length > 200) return BadRequest($"Channel key '{key}' is too long.");
+
+            var settingKey = WeatherController.ChannelLabelPrefix + key;
+            var label = (rawLabel ?? "").Trim();
+
+            if (label.Length == 0)
+            {
+                changed += await db.Settings.Where(s => s.Key == settingKey).ExecuteDeleteAsync(ct);
+                continue;
+            }
+
+            await settings.UpsertAsync(settingKey, label,
+                description: $"Display label for channel {key}.",
+                modifiedBy: UserName(), ct: ct);
+            changed++;
+        }
+
+        await audit.LogAsync("ChannelLabels.Updated",
+            userId: UserId(), userName: UserName(),
+            entityType: "ChannelLabel", entityName: $"{changed} channel(s)", ct: ct);
+
+        return Ok(new { changed });
+    }
+
     // ── Devices ───────────────────────────────────────────────────────────────
 
     [HttpGet("devices")]
@@ -197,18 +255,7 @@ public class AdminController(
             }
             else
             {
-                if (source.AllTimeMax > target.AllTimeMax)
-                {
-                    target.AllTimeMax = source.AllTimeMax;
-                    target.AllTimeMaxAt = source.AllTimeMaxAt;
-                    target.AllTimeMaxSourceId = source.AllTimeMaxSourceId;
-                }
-                if (source.AllTimeMin < target.AllTimeMin)
-                {
-                    target.AllTimeMin = source.AllTimeMin;
-                    target.AllTimeMinAt = source.AllTimeMinAt;
-                    target.AllTimeMinSourceId = source.AllTimeMinSourceId;
-                }
+                AbsorbRecord(target, source);
                 db.WeatherChannelRecords.Remove(source);
                 mergedRecords++;
             }
@@ -233,10 +280,33 @@ public class AdminController(
     }
 
     /// <summary>
+    /// Folds one record row into another, keeping the wider pair of extremes. The row that loses an
+    /// extreme still loses its timestamp and source with it, so a record never reports a high from
+    /// one sensor at another sensor's time.
+    /// </summary>
+    private static void AbsorbRecord(WeatherChannelRecord target, WeatherChannelRecord source)
+    {
+        if (source.AllTimeMax > target.AllTimeMax)
+        {
+            target.AllTimeMax = source.AllTimeMax;
+            target.AllTimeMaxAt = source.AllTimeMaxAt;
+            target.AllTimeMaxSourceId = source.AllTimeMaxSourceId;
+        }
+        if (source.AllTimeMin < target.AllTimeMin)
+        {
+            target.AllTimeMin = source.AllTimeMin;
+            target.AllTimeMinAt = source.AllTimeMinAt;
+            target.AllTimeMinSourceId = source.AllTimeMinSourceId;
+        }
+    }
+
+    /// <summary>
     /// Collapses aggregate rows that now share a period with the channel they were moved onto.
     /// Averages are re-weighted by sample count so the merged row still reflects every reading.
+    /// A null <paramref name="deviceId"/> addresses the station-wide rows, which is what a
+    /// device's rows become once it is deleted.
     /// </summary>
-    private async Task<int> MergeDuplicateAggregatesAsync(int deviceId, string channel, CancellationToken ct)
+    private async Task<int> MergeDuplicateAggregatesAsync(int? deviceId, string channel, CancellationToken ct)
     {
         var duplicateKeys = await db.WeatherReadingAggregates
             .Where(a => a.DeviceId == deviceId && a.ChannelName == channel)
@@ -280,12 +350,58 @@ public class AdminController(
         var device = await db.Devices.FindAsync([id], ct);
         if (device is null) return NotFound();
 
-        // Readings and records keep their history; the FK is SetNull so they become station-wide.
+        // Readings and aggregates keep their history: their FK is SetNull, so they become
+        // station-wide. Records cannot be left to the FK. They are unique per
+        // (ChannelName, DeviceId), unfiltered — SQL Server treats NULLs as equal — and a device
+        // usually shares a channel with the station-wide row a pull source already keeps, so
+        // nulling its DeviceId collided with that row and the delete came back as a 500.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var deviceRecords = await db.WeatherChannelRecords
+            .Where(r => r.DeviceId == id).ToListAsync(ct);
+
+        foreach (var source in deviceRecords)
+        {
+            var target = await db.WeatherChannelRecords
+                .FirstOrDefaultAsync(r => r.DeviceId == null && r.ChannelName == source.ChannelName, ct);
+
+            if (target is null)
+            {
+                // Nothing to collide with; this is what the FK would have done.
+                source.DeviceId = null;
+                continue;
+            }
+
+            AbsorbRecord(target, source);
+            db.WeatherChannelRecords.Remove(source);
+        }
+
+        // Read before the delete, while the rows still carry the device id.
+        var aggregateChannels = await db.WeatherReadingAggregates
+            .Where(a => a.DeviceId == id)
+            .Select(a => a.ChannelName)
+            .Distinct()
+            .ToListAsync(ct);
+
         db.Devices.Remove(device);
         await db.SaveChangesAsync(ct);
+
+        // The aggregates the FK just made station-wide can now duplicate a period the station
+        // already had. Nothing in the schema rejects that, but the History chart would draw the
+        // same period twice, so collapse them the same way a re-key does.
+        var mergedAggregates = 0;
+        foreach (var channel in aggregateChannels)
+            mergedAggregates += await MergeDuplicateAggregatesAsync(null, channel, ct);
+
+        if (mergedAggregates > 0) await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
         await audit.LogAsync("Device.Deleted",
             userId: UserId(), userName: UserName(),
-            entityType: "Device", entityId: id.ToString(), entityName: device.Name, ct: ct);
+            entityType: "Device", entityId: id.ToString(), entityName: device.Name,
+            newValue: $"{deviceRecords.Count} record row(s) folded into station-wide, " +
+                      $"{mergedAggregates} aggregate row(s) merged",
+            ct: ct);
         return NoContent();
     }
 
@@ -319,6 +435,155 @@ public class AdminController(
             entityType: "Device", entityId: id.ToString(), entityName: device.Name,
             newValue: primary.ToString(), ct: ct);
         return Ok(new { device.IsPrimary });
+    }
+
+    // ── Data maintenance ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Rows a purge would remove, without removing any. Shares its query builder with
+    /// <see cref="PurgeData"/> so the preview can never describe a different deletion than the one
+    /// that follows it.
+    /// </summary>
+    [HttpPost("data/purge/preview")]
+    public async Task<IActionResult> PreviewPurge([FromBody] PurgeDto dto, CancellationToken ct)
+    {
+        var cutoff = await ResolvePurgeCutoffAsync(dto, ct);
+        var q = BuildPurgeQueries(dto, cutoff);
+
+        return Ok(new
+        {
+            before          = cutoff,
+            readings        = q.Readings is null ? 0 : await q.Readings.CountAsync(ct),
+            hourlyAggregates = q.Hourly is null ? 0 : await q.Hourly.CountAsync(ct),
+            dailyAggregates = q.Daily is null ? 0 : await q.Daily.CountAsync(ct),
+            records         = q.Records is null ? 0 : await q.Records.CountAsync(ct),
+            forecastCache   = q.Forecasts is null ? 0 : await q.Forecasts.CountAsync(ct),
+            alertCache      = q.Alerts is null ? 0 : await q.Alerts.CountAsync(ct)
+        });
+    }
+
+    /// <summary>
+    /// Deletes weather history. Only the six weather stores are ever touched — devices, data
+    /// sources, widgets, dashboard layouts, users, settings and the audit log are out of scope and
+    /// must stay that way.
+    /// </summary>
+    [HttpPost("data/purge")]
+    public async Task<IActionResult> PurgeData([FromBody] PurgeDto dto, CancellationToken ct)
+    {
+        if (!dto.Readings && !dto.Aggregates && !dto.Records && !dto.Caches)
+            return BadRequest("Select at least one kind of data to purge.");
+
+        var cutoff = await ResolvePurgeCutoffAsync(dto, ct);
+        var q = BuildPurgeQueries(dto, cutoff);
+
+        var readings  = await DeleteInBatchesAsync(q.Readings, ct);
+        var hourly    = await DeleteInBatchesAsync(q.Hourly, ct);
+        var daily     = await DeleteInBatchesAsync(q.Daily, ct);
+        var records   = await DeleteInBatchesAsync(q.Records, ct);
+        var forecasts = await DeleteInBatchesAsync(q.Forecasts, ct);
+        var alerts    = await DeleteInBatchesAsync(q.Alerts, ct);
+
+        // Current conditions and daily extremes are output-cached for 15 s and would keep serving
+        // numbers backed by rows that no longer exist.
+        var invalidator = HttpContext.RequestServices.GetService<IWeatherCacheInvalidator>();
+        if (invalidator is not null) await invalidator.InvalidateCurrentAsync(ct);
+
+        var scope = cutoff is null ? "everything" : $"before {cutoff:u}";
+        await audit.LogAsync("Data.Purged",
+            userId: UserId(), userName: UserName(),
+            entityType: "Data", entityName: "Weather history",
+            newValue: $"{scope}: {readings} readings, {hourly} hourly, {daily} daily, " +
+                      $"{records} records, {forecasts} forecast cache, {alerts} alert cache",
+            ct: ct);
+
+        return Ok(new
+        {
+            before           = cutoff,
+            readings,
+            hourlyAggregates = hourly,
+            dailyAggregates  = daily,
+            records,
+            forecastCache    = forecasts,
+            alertCache       = alerts
+        });
+    }
+
+    private sealed record PurgeQueries(
+        IQueryable<WeatherReading>? Readings,
+        IQueryable<WeatherReadingAggregate>? Hourly,
+        IQueryable<WeatherReadingAggregate>? Daily,
+        IQueryable<WeatherChannelRecord>? Records,
+        IQueryable<ForecastCache>? Forecasts,
+        IQueryable<AlertCache>? Alerts);
+
+    /// <summary>
+    /// A null cutoff means "everything"; otherwise rows at or after the cutoff are kept. The date
+    /// arrives as a local station date, matching what the admin picked on screen.
+    /// </summary>
+    private async Task<DateTime?> ResolvePurgeCutoffAsync(PurgeDto dto, CancellationToken ct)
+    {
+        if (dto.Before is null) return null;
+
+        var tzId = await settings.GetAsync("Station.TimeZone", ct);
+        var tz = tzId is not null ? TimeZoneInfo.FindSystemTimeZoneById(tzId) : TimeZoneInfo.Local;
+        var localMidnight = new DateTime(dto.Before.Value.Year, dto.Before.Value.Month,
+            dto.Before.Value.Day, 0, 0, 0, DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
+    }
+
+    private PurgeQueries BuildPurgeQueries(PurgeDto dto, DateTime? cutoff)
+    {
+        var readings = dto.Readings
+            ? db.WeatherReadings.Where(r => cutoff == null || r.Timestamp < cutoff)
+            : null;
+
+        var hourly = dto.Aggregates
+            ? db.WeatherReadingAggregates
+                .Where(a => a.Granularity == AggregationGranularity.Hourly)
+                .Where(a => cutoff == null || a.PeriodStart < cutoff)
+            : null;
+
+        var daily = dto.Aggregates
+            ? db.WeatherReadingAggregates
+                .Where(a => a.Granularity == AggregationGranularity.Daily)
+                .Where(a => cutoff == null || a.PeriodStart < cutoff)
+            : null;
+
+        // A record carries two timestamps rather than one. Under a date cutoff it only goes when
+        // both extremes predate it — a record still anchored by a surviving reading is kept.
+        var records = dto.Records
+            ? db.WeatherChannelRecords
+                .Where(r => cutoff == null || (r.AllTimeMaxAt < cutoff && r.AllTimeMinAt < cutoff))
+            : null;
+
+        var forecasts = dto.Caches
+            ? db.ForecastCaches.Where(f => cutoff == null || f.FetchedAt < cutoff)
+            : null;
+
+        var alerts = dto.Caches
+            ? db.AlertCaches.Where(a => cutoff == null || a.FetchedAt < cutoff)
+            : null;
+
+        return new PurgeQueries(readings, hourly, daily, records, forecasts, alerts);
+    }
+
+    /// <summary>
+    /// Deletes in chunks. A year of raw readings runs to millions of rows, and a single unbounded
+    /// DELETE escalates to a table lock long enough to stall ingestion.
+    /// </summary>
+    private static async Task<int> DeleteInBatchesAsync<T>(IQueryable<T>? query, CancellationToken ct)
+        where T : class
+    {
+        if (query is null) return 0;
+
+        const int batchSize = 50_000;
+        var total = 0;
+        while (true)
+        {
+            var deleted = await query.Take(batchSize).ExecuteDeleteAsync(ct);
+            total += deleted;
+            if (deleted < batchSize) return total;
+        }
     }
 
     // ── Data Sources ──────────────────────────────────────────────────────────
@@ -373,16 +638,56 @@ public class AdminController(
         return NoContent();
     }
 
+    /// <summary>
+    /// Deletes a data source. Readings and aggregates hold a non-nullable FK with
+    /// <c>DeleteBehavior.Restrict</c>, so any source that has ever recorded anything cannot be
+    /// removed while its history stands — the delete used to reach SQL Server, get rejected, and
+    /// surface as a 500 the page threw away. Dependents are counted first and reported as a 409 so
+    /// the caller can re-confirm with real numbers; <paramref name="force"/> then takes the
+    /// history with the source, which is the only way to remove such a source at all.
+    /// </summary>
     [HttpDelete("datasources/{id:int}")]
-    public async Task<IActionResult> DeleteDataSource(int id, CancellationToken ct)
+    public async Task<IActionResult> DeleteDataSource(int id, bool force, CancellationToken ct)
     {
         var source = await db.DataSources.FindAsync([id], ct);
         if (source is null) return NotFound();
+
+        var readingCount = await db.WeatherReadings.CountAsync(r => r.SourceId == id, ct);
+        var aggregateCount = await db.WeatherReadingAggregates.CountAsync(a => a.SourceId == id, ct);
+
+        if ((readingCount > 0 || aggregateCount > 0) && !force)
+        {
+            return Conflict(new
+            {
+                name = source.Name,
+                readings = readingCount,
+                aggregates = aggregateCount,
+                message = $"\"{source.Name}\" has {readingCount:N0} readings and " +
+                          $"{aggregateCount:N0} aggregates. They must be deleted with the source."
+            });
+        }
+
+        // The batched deletes run immediately while the source removal waits for SaveChanges, so
+        // without a transaction a failure partway through would strip the history and leave the
+        // source behind.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        if (readingCount > 0)
+            await DeleteInBatchesAsync(db.WeatherReadings.Where(r => r.SourceId == id), ct);
+        if (aggregateCount > 0)
+            await DeleteInBatchesAsync(db.WeatherReadingAggregates.Where(a => a.SourceId == id), ct);
+
         db.DataSources.Remove(source);
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
         await audit.LogAsync("DataSource.Deleted",
             userId: UserId(), userName: UserName(),
-            entityType: "DataSource", entityId: id.ToString(), entityName: source.Name, ct: ct);
+            entityType: "DataSource", entityId: id.ToString(), entityName: source.Name,
+            newValue: readingCount > 0 || aggregateCount > 0
+                ? $"with {readingCount} readings and {aggregateCount} aggregates"
+                : null,
+            ct: ct);
         return NoContent();
     }
 
@@ -754,6 +1059,17 @@ public class AdminController(
 
     /// <summary>One channel rename for a device's stored history.</summary>
     public record ChannelRekeyDto(string From, string To);
+
+    /// <summary>
+    /// What a purge should remove. <paramref name="Before"/> is a local station date; null purges
+    /// everything in the selected stores.
+    /// </summary>
+    public record PurgeDto(
+        DateTime? Before,
+        bool Readings,
+        bool Aggregates,
+        bool Records,
+        bool Caches);
 
     public record WidgetDto(
         WidgetType Type,

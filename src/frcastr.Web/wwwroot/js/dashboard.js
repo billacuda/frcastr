@@ -170,6 +170,9 @@
 
         await refreshData();
         setInterval(refreshData, pollMs);
+
+        // Lets test mode redraw immediately on apply rather than waiting for the next poll.
+        window.frcastrRefresh = refreshData;
         setInterval(tickClocks, 1000);
 
         window.addEventListener('tempUnitChanged', function () { renderAll(); });
@@ -210,6 +213,14 @@
             var sun            = results[3];
             var alerts         = results[4];
             var dailyExtremes  = results[5];
+
+            // Test mode (admin-only, never loaded for anyone else) overlays simulated readings
+            // here, before anything consumes them, so renders, sparkline buffers and stale badges
+            // all see one consistent picture. Nothing is sent anywhere — see test-mode.js.
+            if (window.TestMode && TestMode.isActive()) {
+                dailyExtremes = dailyExtremes || {};   // so fabricated channels can get a high/low
+                current = TestMode.apply(current, dailyExtremes);
+            }
 
             if (current && current.readings) {
                 bufferReadings(current.readings);
@@ -322,6 +333,7 @@
             case 14: return [config.channel || 'rainfall'];
             case 15: return [config.channel || 'pressure'];
             case 16: return [config.channel || 'aqi.outdoor'];
+            case 19: return [config.channel || 'temperature.water'];
             default: return [];
         }
     }
@@ -454,6 +466,23 @@
     var SIMPLE_WIND_TYPES     = [6];
     var SIMPLE_FORECAST_TYPES = [8, 18];
     var SIMPLE_RADAR_TYPES    = [17];
+    var SIMPLE_WATER_TYPES    = [19];
+
+    // Band thresholds are stored in °C to match the readings, but shown in whatever unit the site
+    // is currently displaying — the defaults below are 77 / 84 / 90 °F.
+    var WATER_BAND_DEFAULTS = { icy: 25, cool: 28.9, warm: 32.2 };
+
+    function bandToDisplay(c) {
+        var u = window.getTempUnit ? window.getTempUnit() : 'C';
+        return u === 'F' ? Math.round(c * 9 / 5 + 32) : Math.round(c * 10) / 10;
+    }
+
+    function bandToCelsius(v) {
+        var u = window.getTempUnit ? window.getTempUnit() : 'C';
+        return u === 'F' ? Math.round(((v - 32) * 5 / 9) * 10) / 10 : Number(v);
+    }
+
+    var cachedLabels = null;
 
     async function loadChannels() {
         if (cachedChannels) return cachedChannels;
@@ -461,7 +490,18 @@
             var r = await fetch('/api/admin/channels');
             cachedChannels = r.ok ? await r.json() : [];
         } catch (e) { cachedChannels = []; }
+        try {
+            var lr = await fetch('/api/weather/channel-labels');
+            cachedLabels = lr.ok ? await lr.json() : {};
+        } catch (e) { cachedLabels = {}; }
         return cachedChannels;
+    }
+
+    // Display label for a channel key: exact key, then canonical channel, then the key itself.
+    function channelLabel(key) {
+        if (!cachedLabels) return key;
+        var bare = key.indexOf('@') > 0 ? key.slice(0, key.indexOf('@')) : key;
+        return cachedLabels[key] || cachedLabels[bare] || key;
     }
 
     function fillChannelSelect(selId, channels, selected, addNone) {
@@ -470,17 +510,21 @@
         sel.innerHTML = addNone ? '<option value="">(none)</option>' : '<option value="">(select channel)</option>';
         (channels || []).forEach(function (ch) {
             var opt = document.createElement('option');
+            // The value stays the channel key — widgets bind by key, so a label can be renamed or
+            // removed without touching any widget's config.
             opt.value = ch.name;
+            var label = channelLabel(ch.name);
             opt.textContent = ch.value != null
-                ? ch.name + ' [' + Number(ch.value).toFixed(1) + ' ' + ch.unit + ']'
-                : ch.name;
+                ? label + ' [' + Number(ch.value).toFixed(1) + ' ' + ch.unit + ']'
+                : label;
+            if (label !== ch.name) opt.title = ch.name;
             if (ch.name === selected) opt.selected = true;
             sel.appendChild(opt);
         });
     }
 
     function showSimpleSection(prefix, type, conf) {
-        var sections = ['Datetime', 'Channel', 'Wind', 'Forecast', 'Radar', 'None'];
+        var sections = ['Datetime', 'Channel', 'Wind', 'Forecast', 'Radar', 'Water', 'None'];
         sections.forEach(function (s) {
             var el = document.getElementById(prefix + 'Simple' + s);
             if (el) el.style.display = 'none';
@@ -506,6 +550,19 @@
             if (el) el.style.display = '';
             var pEl = document.getElementById(prefix + 'Periods');
             if (pEl) pEl.value = conf.periods || (type === 18 ? 12 : 5);
+        } else if (SIMPLE_WATER_TYPES.indexOf(type) >= 0) {
+            var el = document.getElementById(prefix + 'SimpleWater');
+            if (el) el.style.display = '';
+            fillChannelSelect(prefix + 'WaterChannel', cachedChannels, conf.channel, false);
+            var bands = conf.bands || {};
+            var unitEl = document.getElementById(prefix + 'WaterBandUnit');
+            if (unitEl) unitEl.textContent = window.getTempUnit ? window.getTempUnit() : 'C';
+            ['icy', 'cool', 'warm'].forEach(function (k) {
+                var input = document.getElementById(prefix + 'Band' + k);
+                if (input) {
+                    input.value = bandToDisplay(bands[k] != null ? Number(bands[k]) : WATER_BAND_DEFAULTS[k]);
+                }
+            });
         } else if (SIMPLE_RADAR_TYPES.indexOf(type) >= 0) {
             var el = document.getElementById(prefix + 'SimpleRadar');
             if (el) el.style.display = '';
@@ -543,6 +600,15 @@
         } else if (SIMPLE_FORECAST_TYPES.indexOf(type) >= 0) {
             var pEl = document.getElementById(prefix + 'Periods');
             if (pEl) { var p = parseInt(pEl.value, 10); if (p > 0) conf.periods = p; }
+        } else if (SIMPLE_WATER_TYPES.indexOf(type) >= 0) {
+            var wch = document.getElementById(prefix + 'WaterChannel');
+            if (wch && wch.value) conf.channel = wch.value;
+            var bands = {};
+            ['icy', 'cool', 'warm'].forEach(function (k) {
+                var input = document.getElementById(prefix + 'Band' + k);
+                if (input && input.value !== '') bands[k] = bandToCelsius(parseFloat(input.value));
+            });
+            if (Object.keys(bands).length) conf.bands = bands;
         } else if (SIMPLE_RADAR_TYPES.indexOf(type) >= 0) {
             var urlEl = document.getElementById(prefix + 'RadarUrl');
             var latEl = document.getElementById(prefix + 'RadarLat');

@@ -81,6 +81,7 @@
 </div>
 
 @section Scripts {
+<script src="~/js/admin-api.js" asp-append-version="true"></script>
 <script>
 function openAddModal() {
     document.getElementById('hookId').value = '0';
@@ -124,8 +125,7 @@ async function saveHook() {
 
 async function deleteHook(id, name) {
     if (!confirm('Delete "' + name + '"?')) return;
-    await fetch('/api/admin/webhooks/' + id, { method: 'DELETE' });
-    location.reload();
+    await adminFetch('/api/admin/webhooks/' + id, { method: 'DELETE' });
 }
 </script>
 }

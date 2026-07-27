@@ -215,8 +215,56 @@ public class WeatherController(
     public async Task<IActionResult> Records(CancellationToken ct)
     {
         var records = await weatherData.GetChannelRecordsAsync(ct);
-        return Ok(records);
+
+        // Records are stored per device, so two sensors on one canonical channel produce two rows.
+        // Without the device they render as duplicates that differ only in their numbers.
+        var deviceIds = records.Where(r => r.DeviceId is not null)
+            .Select(r => r.DeviceId!.Value).Distinct().ToList();
+
+        var devices = deviceIds.Count == 0
+            ? []
+            : await db.Devices
+                .Where(d => deviceIds.Contains(d.Id))
+                .Select(d => new { d.Id, d.DeviceId, d.Name })
+                .ToDictionaryAsync(d => d.Id, ct);
+
+        var result = records.Select(r =>
+        {
+            var device = r.DeviceId is not null && devices.TryGetValue(r.DeviceId.Value, out var d) ? d : null;
+            return new
+            {
+                r.ChannelName,
+                ChannelKey = ChannelKey.Format(r.ChannelName, device?.DeviceId),
+                r.DeviceId,
+                DeviceKey = device?.DeviceId,
+                DeviceName = device?.Name,
+                r.AllTimeMax, r.AllTimeMaxAt, r.AllTimeMaxSourceId,
+                r.AllTimeMin, r.AllTimeMinAt, r.AllTimeMinSourceId
+            };
+        });
+
+        return Ok(result);
     }
+
+    /// <summary>
+    /// Display labels for channel keys, e.g. { "temperature.indoor": "mqtt" }. Anonymous because
+    /// the History page is: channel names are load-bearing (bounds, calculated channels and unit
+    /// conversion all key off them), so a label is layered on for display instead of renaming.
+    /// </summary>
+    [HttpGet("channel-labels")]
+    [OutputCache(PolicyName = "SunMoon")]
+    public async Task<IActionResult> ChannelLabels(CancellationToken ct)
+    {
+        var labels = await db.Settings
+            .Where(s => s.Key.StartsWith(ChannelLabelPrefix))
+            .Select(s => new { s.Key, s.Value })
+            .ToListAsync(ct);
+
+        return Ok(labels.ToDictionary(l => l.Key[ChannelLabelPrefix.Length..], l => l.Value));
+    }
+
+    /// <summary>Settings key prefix for channel display labels; see AdminController for writes.</summary>
+    public const string ChannelLabelPrefix = "Channel.Label.";
 
     [HttpGet("history")]
     public async Task<IActionResult> History(
@@ -276,13 +324,20 @@ public class WeatherController(
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
         var result = await weatherData.GetHistoryAsync(channelList, start, end, ct);
 
-        var sb = new StringBuilder("Timestamp,Channel,Value,Unit\r\n");
+        // Without a device column two sensors on the same canonical channel are indistinguishable
+        // in the file. The channel keeps its canonical name — an export is read by machines, so a
+        // display label here would make two exports of the same data disagree.
+        string Device(int? deviceId) =>
+            deviceId is not null && result.Devices is not null &&
+            result.Devices.TryGetValue(deviceId.Value, out var d) ? d.DeviceKey : "";
+
+        var sb = new StringBuilder("Timestamp,Channel,Device,Value,Unit\r\n");
         foreach (var p in result.RawPoints)
             sb.AppendLine(FormattableString.Invariant(
-                $"{p.Timestamp:u},{p.ChannelName},{p.Value},{p.Unit}"));
+                $"{p.Timestamp:u},{p.ChannelName},{Device(p.DeviceId)},{p.Value},{p.Unit}"));
         foreach (var p in result.AggregatePoints)
             sb.AppendLine(FormattableString.Invariant(
-                $"{p.PeriodStart:u},{p.ChannelName},{p.Avg},{p.Unit}"));
+                $"{p.PeriodStart:u},{p.ChannelName},{Device(p.DeviceId)},{p.Avg},{p.Unit}"));
 
         var filename = $"frcastr-{period}-{d:yyyy-MM-dd}.csv";
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", filename);

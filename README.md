@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.5.0](CHANGELOG.md)**
+## **Current version [0.6.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -118,7 +118,9 @@ offsets and calculated channels are then keyed on. Overrides apply to new readin
 lists what the device already has stored and can re-key that history onto the new channel names.
 
 **Admin → Devices** lists every registered device with its last-seen status, and is where you rename
-one, set its location, choose the primary, or disable it. Each device can carry its own offline
+one, set its location, choose the primary, or disable it. It warns when two enabled devices report
+the same canonical channel, which is the condition behind merged history and all-time records that
+overwrite each other — the fix is a channel override. Each device can carry its own offline
 threshold; when it goes quiet — or its last will publishes `offline` — frcastr emails a device-level
 alert. That check reads the stored last-seen timestamp, so it survives an app restart.
 
@@ -127,7 +129,45 @@ Reference ESP32-S3 firmware implementing this contract lives in
 
 ## Dashboard widgets
 
-DateTime, Temperature (outdoor/indoor), Humidity (outdoor/indoor), Pressure, Wind, Weather Animation, Forecast, Moon Phase, Sunrise/Sunset, Alerts, Feels Like, Rainfall, Pressure Trend, Air Quality, Radar, Custom channel.
+DateTime, Temperature (outdoor/indoor), Humidity (outdoor/indoor), Water Temperature, Pressure, Wind, Weather Animation, Forecast, Moon Phase, Sunrise/Sunset, Alerts, Feels Like, Rainfall, Pressure Trend, Air Quality, Radar, Custom channel.
+
+**Water Temperature** reads `temperature.water` and draws the value over an animated pool scene that
+follows the reading — icy, cool, open water, or steamy. The thresholds default to 77 / 84 / 90 °F
+and are editable per widget, so a hot tub and a cold plunge can each use their own.
+
+**Test mode** (administrators, dashboard toolbar → **Test**) overlays simulated readings so layouts
+and animations can be exercised without waiting for the weather. Any channel can be set, including
+ones no sensor reports yet, and scenario presets fill several at once. It is browser-local: nothing
+is sent to the server, nothing is recorded, and other viewers keep seeing live weather.
+
+## History and channel labels
+
+The **History** page charts a period, exports it as CSV, and lists all-time records. Series are keyed
+per device — `temperature.indoor@outdoor-01` — so two sensors on one canonical channel draw as two
+lines instead of one, and the CSV carries a **Device** column beside the channel. Channels from pull
+sources keep their bare names. Hidden channels, series colors, the period and date, and the active
+tab are remembered in the browser, so reopening the page returns to the view you left.
+
+**Admin → Channels** gives a channel a friendly display name — call `temperature.indoor` "mqtt" on
+screen — without renaming it. Channel names are load-bearing (sanity bounds match on the
+`temperature.` prefix, calculated channels look up exact names, and °C/°F conversion tests the same
+prefix), so the stored name stays canonical and the label is layered on for display only. A single
+device's key can be labeled on its own, and the most specific label wins: exact key, then canonical
+channel, then the key itself. Labels show in the History sidebar, chart and records table and in the
+widget channel pickers, where widgets still bind by key — clearing a label can never break one. The
+CSV export always uses canonical names, so two exports of the same data cannot disagree.
+
+## Data maintenance
+
+**Admin → Data** lists what is stored — row counts and date ranges for raw readings, hourly and
+daily aggregates, all-time records, and the forecast and alert caches — and can purge history,
+either everything or everything before a date, per store. **Preview** reports what would be deleted
+before anything is; the purge itself requires typing `PURGE` and is audit-logged. Devices, data
+sources, widgets, dashboard layouts, users and settings are never touched. There is no undo, so
+take a backup first.
+
+Passive retention still applies on its own: see the **Retention** section of Settings for how long
+raw readings, aggregates and records are kept before the background services roll them off.
 
 ## Version history
 

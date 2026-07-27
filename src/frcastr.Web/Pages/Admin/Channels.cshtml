@@ -1,0 +1,89 @@
+@page
+@model frcastr.Web.Pages.Admin.ChannelsModel
+@{
+    ViewData["Title"] = "Channels";
+}
+
+<div class="container-fluid py-4">
+    <div class="d-flex align-items-center mb-3">
+        <h1 class="h3 mb-0 me-auto">Channels</h1>
+        <button class="btn btn-primary btn-sm" onclick="saveLabels()">Save labels</button>
+    </div>
+
+    <p class="small text-body-secondary">
+        Labels change what a channel is <em>called</em> on screen — the History chart, the all-time
+        records and the widget channel pickers. The stored channel name never changes, because it is
+        load-bearing: sanity bounds match on the <code>temperature.</code> prefix, dew point and
+        feels-like look up <code>temperature.indoor</code> and <code>temperature.outdoor</code> by
+        exact name, and the &deg;C/&deg;F toggle keys off the same prefix. Widgets bind to the key,
+        so clearing a label never breaks one.
+    </p>
+    <p class="small text-body-secondary">
+        A device-scoped key (<code>temperature.indoor@@outdoor-01</code>) can carry its own label;
+        without one it falls back to the label on its canonical channel, then to the key itself.
+    </p>
+
+    @if (!Model.Channels.Any())
+    {
+        <div class="alert alert-info mb-0">No channels have reported yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm align-middle">
+                <thead>
+                    <tr>
+                        <th>Channel key</th><th>Device</th><th class="text-end">Latest</th><th>Label</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Model.Channels)
+                    {
+                        <tr>
+                            <td class="small font-monospace">
+                                @c.Key
+                                @if (c.IsCalculated)
+                                {
+                                    <span class="badge text-bg-secondary ms-1">calculated</span>
+                                }
+                            </td>
+                            <td class="small">
+                                @if (c.DeviceKey is null)
+                                {
+                                    <span class="text-body-secondary">station</span>
+                                }
+                                else
+                                {
+                                    @c.DeviceName <span class="text-body-secondary font-monospace">(@c.DeviceKey)</span>
+                                }
+                            </td>
+                            <td class="text-end small font-monospace">@c.Value.ToString("0.##") @c.Unit</td>
+                            <td style="max-width:16rem">
+                                <input type="text" class="form-control form-control-sm channel-label"
+                                       data-key="@c.Key" value="@c.Label"
+                                       placeholder="@Model.Fallback(c)" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@section Scripts {
+<script src="~/js/admin-api.js" asp-append-version="true"></script>
+<script>
+async function saveLabels() {
+    const body = {};
+    document.querySelectorAll('.channel-label').forEach(function (el) {
+        // Empty values are sent too: that is how a label is cleared.
+        body[el.dataset.key] = el.value.trim();
+    });
+
+    await adminFetch('/api/admin/channel-labels', {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+}
+</script>
+}

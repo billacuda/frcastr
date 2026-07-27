@@ -20,5 +20,6 @@ public enum WidgetType
     PressureTrend = 15,
     AirQuality = 16,
     Radar = 17,
-    HourlyForecast = 18
+    HourlyForecast = 18,
+    WaterTemperature = 19
 }

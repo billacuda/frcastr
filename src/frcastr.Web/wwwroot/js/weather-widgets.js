@@ -267,6 +267,18 @@ window.WeatherWidgets = (function () {
             '</div>';
     }
 
+    // Today's high/low for a channel key, in the display unit. Returns null when the server has
+    // no extremes for that key — shared by every temperature tile so the three of them cannot
+    // drift apart on formatting.
+    function hiLowHtml(data, channelKey, unit) {
+        var ex = data && data.dailyExtremes && data.dailyExtremes[channelKey];
+        if (!ex || (ex.max == null && ex.min == null)) return null;
+        var hi = ex.max != null ? (unit === 'F' ? toF(ex.max) : ex.max) : null;
+        var lo = ex.min != null ? (unit === 'F' ? toF(ex.min) : ex.min) : null;
+        return (hi != null ? '<span>H&thinsp;' + fmt(hi, 0) + '&deg;</span>' : '') +
+               (lo != null ? '<span>L&thinsp;' + fmt(lo, 0) + '&deg;</span>' : '') || null;
+    }
+
     // ── Renderers ─────────────────────────────────────────────────────────────
     // Each receives (el, config, data) where el is the [data-widget-body] div.
 
@@ -353,14 +365,7 @@ window.WeatherWidgets = (function () {
             }
         }
 
-        var hiLow = null;
-        var chEx = data && data.dailyExtremes && data.dailyExtremes[ch];
-        if (chEx && (chEx.max != null || chEx.min != null)) {
-            var hiD = chEx.max != null ? (u === 'F' ? toF(chEx.max) : chEx.max) : null;
-            var loD = chEx.min != null ? (u === 'F' ? toF(chEx.min) : chEx.min) : null;
-            hiLow = (hiD != null ? '<span>H&thinsp;' + fmt(hiD, 0) + '&deg;</span>' : '') +
-                    (loD != null ? '<span>L&thinsp;' + fmt(loD, 0) + '&deg;</span>' : '') || null;
-        }
+        var hiLow = hiLowHtml(data, ch, u);
 
         el.innerHTML = buildMetric({
             value:     fmt(dv, 0),
@@ -918,6 +923,82 @@ window.WeatherWidgets = (function () {
         });
         html += '</div>';
         el.innerHTML = html;
+    };
+
+    // 19: Water Temperature (pool/spa, animated scene keyed to the reading)
+    //
+    // Bands live in the config in °C, matching how readings are stored, and are converted for
+    // display by the editor. Defaults are 25 / 28.9 / 32.2 °C = 77 / 84 / 90 °F.
+    var WATER_BANDS = { icy: 25, cool: 28.9, warm: 32.2 };
+
+    function waterClass(tempC, bands) {
+        var b = bands || {};
+        // A hand-edited config can carry anything; a non-numeric band falls back to its default
+        // rather than failing every comparison and landing on the hottest scene.
+        function band(v, fallback) {
+            var n = Number(v);
+            return (v == null || !isFinite(n)) ? fallback : n;
+        }
+        var icy  = band(b.icy,  WATER_BANDS.icy);
+        var cool = band(b.cool, WATER_BANDS.cool);
+        var warm = band(b.warm, WATER_BANDS.warm);
+
+        // No reading yet: show open water rather than implying the pool is frozen.
+        if (tempC == null || !isFinite(tempC)) return 'wt-water';
+        if (tempC <  icy)  return 'wt-icy';
+        if (tempC <  cool) return 'wt-cool';
+        if (tempC <  warm) return 'wt-water';
+        return 'wt-steamy';
+    }
+
+    // Layered scene, same approach as buildAnimHtml: fixed elements, all motion in CSS keyframes.
+    function buildWaterHtml(cls) {
+        var extras = '';
+        if (cls === 'wt-icy') {
+            for (var i = 0; i < 5; i++) {
+                extras += '<span class="wt-shard" style="--offset:' + (8 + i * 20) + '%;--delay:' +
+                    (i * 0.7).toFixed(2) + 's"></span>';
+            }
+        }
+        if (cls === 'wt-steamy') {
+            for (var s = 0; s < 5; s++) {
+                extras += '<span class="wt-steam" style="--offset:' + (12 + s * 18) + '%;--delay:' +
+                    (s * 0.9).toFixed(2) + 's"></span>';
+            }
+        }
+        return '<div class="water-anim ' + cls + '">' +
+            '<div class="wt-wave wt-wave-back"></div>' +
+            '<div class="wt-wave wt-wave-mid"></div>' +
+            '<div class="wt-wave wt-wave-front"></div>' +
+            extras +
+            '</div>';
+    }
+
+    R[19] = function (el, config, data) {
+        var ch = config.channel || 'temperature.water';
+        var r  = reading(data, ch);
+        var v  = val(r);
+        var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
+        var dv = v == null ? null : (u === 'F' ? toF(v) : v);
+        var hl = hiLowHtml(data, ch, u);
+
+        // The value sits over the scene rather than inside buildMetric, whose flex column would
+        // fight an absolutely-positioned background. The .metric-* classes are kept so the
+        // container-query sizing in site.css and --widget-color still apply.
+        el.innerHTML =
+            '<div class="water-widget h-100" style="min-height:0;overflow:hidden">' +
+            buildWaterHtml(waterClass(v, config.bands)) +
+            '<div class="water-content d-flex flex-column h-100" style="min-height:0">' +
+            '<div class="d-flex flex-column justify-content-center flex-grow-1 align-items-center" style="min-height:0">' +
+            '<div class="metric-primary d-flex align-items-baseline gap-1" style="line-height:1">' +
+            '<span class="fw-bold metric-value">' + fmt(dv, 0) + '</span>' +
+            '<span class="metric-unit">&deg;' + u + '</span>' +
+            '</div>' +
+            '</div>' +
+            (hl ? '<div class="metric-hl d-flex gap-2 justify-content-center">' + hl + '</div>' : '') +
+            tsHtml(ts(r)) +
+            '</div>' +
+            '</div>';
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

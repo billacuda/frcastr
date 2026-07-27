@@ -1,0 +1,176 @@
+@page
+@model frcastr.Web.Pages.Admin.DataModel
+@{
+    ViewData["Title"] = "Data";
+}
+
+<div class="container-fluid py-4">
+    <h1 class="h3 mb-3">Data</h1>
+
+    <div class="table-responsive mb-4">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr><th>Store</th><th class="text-end">Rows</th><th>Oldest</th><th>Newest</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var s in Model.Stores)
+                {
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">@s.Name</div>
+                            <div class="small text-body-secondary">@s.Description</div>
+                        </td>
+                        <td class="text-end font-monospace">@s.Rows.ToString("N0")</td>
+                        <td class="small text-body-secondary">@(s.Oldest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
+                        <td class="small text-body-secondary">@(s.Newest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="small text-body-secondary mb-0">Timestamps are UTC.</p>
+    </div>
+
+    <div class="card border-danger">
+        <div class="card-header text-danger fw-semibold">Purge history</div>
+        <div class="card-body">
+            <p class="small text-body-secondary">
+                Deletes weather history only. Devices, data sources, widgets, dashboard layouts,
+                users, settings and the audit log are never touched. There is no undo — take a
+                database backup first.
+            </p>
+
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <label class="form-label">Scope</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="purgeScope" id="scopeBefore"
+                               value="before" checked onchange="onScopeChange()" />
+                        <label class="form-check-label" for="scopeBefore">Everything before a date</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="purgeScope" id="scopeAll"
+                               value="all" onchange="onScopeChange()" />
+                        <label class="form-check-label text-danger" for="scopeAll">Everything, all of it</label>
+                    </div>
+                    <input type="date" class="form-control form-control-sm mt-2" id="purgeBefore"
+                           value="@DateTime.Today.AddMonths(-1).ToString("yyyy-MM-dd")" />
+                    <div class="form-text">Interpreted in the station's time zone. Readings from that date onward are kept.</div>
+                </div>
+
+                <div class="col-md-7">
+                    <label class="form-label">Include</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="incReadings" checked />
+                        <label class="form-check-label" for="incReadings">Raw readings</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="incAggregates" />
+                        <label class="form-check-label" for="incAggregates">
+                            Hourly + daily aggregates
+                            <span class="small text-body-secondary d-block">
+                                Charts and the History page read these for anything older than the raw
+                                retention window, so leaving them keeps the old period visible.
+                            </span>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="incRecords" />
+                        <label class="form-check-label" for="incRecords">
+                            All-time records
+                            <span class="small text-body-secondary d-block">
+                                Under a date cutoff, only records whose high and low both predate it.
+                            </span>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="incCaches" />
+                        <label class="form-check-label" for="incCaches">Forecast + alert caches</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2 mt-3">
+                <button class="btn btn-outline-secondary btn-sm" onclick="previewPurge()">Preview</button>
+                <input type="text" class="form-control form-control-sm" id="purgeConfirm" style="max-width:220px"
+                       placeholder="type PURGE to enable" oninput="onConfirmInput()" autocomplete="off" />
+                <button class="btn btn-danger btn-sm" id="purgeBtn" onclick="runPurge()" disabled>Purge</button>
+            </div>
+
+            <div id="purgeResult" class="mt-3"></div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function onScopeChange() {
+    document.getElementById('purgeBefore').disabled =
+        document.querySelector('input[name="purgeScope"]:checked').value === 'all';
+}
+
+function onConfirmInput() {
+    document.getElementById('purgeBtn').disabled =
+        document.getElementById('purgeConfirm').value.trim() !== 'PURGE';
+}
+
+function purgeBody() {
+    var all = document.querySelector('input[name="purgeScope"]:checked').value === 'all';
+    var date = document.getElementById('purgeBefore').value;
+    return {
+        before:     all ? null : (date ? date + 'T00:00:00' : null),
+        readings:   document.getElementById('incReadings').checked,
+        aggregates: document.getElementById('incAggregates').checked,
+        records:    document.getElementById('incRecords').checked,
+        caches:     document.getElementById('incCaches').checked
+    };
+}
+
+function countsTable(r, title, cls) {
+    var rows = [
+        ['Raw readings', r.readings],
+        ['Hourly aggregates', r.hourlyAggregates],
+        ['Daily aggregates', r.dailyAggregates],
+        ['All-time records', r.records],
+        ['Forecast cache', r.forecastCache],
+        ['Alert cache', r.alertCache]
+    ];
+    var total = rows.reduce(function (sum, x) { return sum + x[1]; }, 0);
+    return '<div class="alert ' + cls + ' mb-0">' +
+        '<div class="fw-semibold mb-2">' + title + '</div>' +
+        '<table class="table table-sm mb-2"><tbody>' +
+        rows.map(function (x) {
+            return '<tr><td>' + x[0] + '</td><td class="text-end font-monospace">' +
+                   x[1].toLocaleString() + '</td></tr>';
+        }).join('') +
+        '<tr class="fw-semibold"><td>Total</td><td class="text-end font-monospace">' +
+        total.toLocaleString() + '</td></tr>' +
+        '</tbody></table>' +
+        '<div class="small mb-0">' + (r.before ? 'Cutoff ' + r.before + ' (UTC)' : 'No cutoff — everything.') + '</div>' +
+        '</div>';
+}
+
+async function previewPurge() {
+    var el = document.getElementById('purgeResult');
+    el.innerHTML = '<span class="text-body-secondary small">Counting…</span>';
+    var r = await fetch('/api/admin/data/purge/preview', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(purgeBody())
+    });
+    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + (await r.text()) + '</div>'; return; }
+    el.innerHTML = countsTable(await r.json(), 'This would delete:', 'alert-warning');
+}
+
+async function runPurge() {
+    if (!confirm('Delete this data permanently? There is no undo.')) return;
+    var el = document.getElementById('purgeResult');
+    el.innerHTML = '<span class="text-body-secondary small">Purging…</span>';
+    var r = await fetch('/api/admin/data/purge', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(purgeBody())
+    });
+    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + (await r.text()) + '</div>'; return; }
+    el.innerHTML = countsTable(await r.json(), 'Deleted:', 'alert-success');
+    document.getElementById('purgeConfirm').value = '';
+    onConfirmInput();
+    setTimeout(function () { location.reload(); }, 2500);
+}
+</script>
+}

@@ -10,6 +10,9 @@ public static class ChannelProcessing
     {
         ["temperature.outdoor"] = (-80, 80),
         ["temperature.indoor"] = (-20, 60),
+        // Pool/spa water: freezes at 0 and a heater tops out well under 45, so anything outside
+        // this is a failing probe rather than a swim.
+        ["temperature.water"] = (-5, 60),
         ["humidity.outdoor"] = (0, 100),
         ["humidity.indoor"] = (0, 100),
         ["pressure"] = (800, 1100),

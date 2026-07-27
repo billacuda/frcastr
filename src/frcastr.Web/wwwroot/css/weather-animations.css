@@ -213,6 +213,153 @@
     100% { top: 100%; opacity: 0;   transform: translateX(8px) rotate(200deg); }
 }
 
+/* ─── Water (pool/spa) ───────────────────────────────────────────────────────
+   Scene for the Water Temperature widget. Unlike the weather animations this is a
+   background: it fills the widget and the reading is drawn on top, so every layer is
+   absolutely positioned and nothing here participates in layout. The four bands are
+   set by the widget's configured thresholds — see waterClass() in weather-widgets.js. */
+.water-widget {
+    position: relative;
+}
+.water-anim {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    background: linear-gradient(180deg,
+        var(--wt-top, #7dd3fc) 0%,
+        var(--wt-bottom, #0284c7) 100%);
+}
+/* Content sits above the scene and stays readable over it. */
+.water-content {
+    position: relative;
+    z-index: 1;
+    color: #f8fafc;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .45);
+}
+.has-widget-color .water-content {
+    color: var(--widget-color);
+}
+.water-content .metric-unit,
+.water-content .metric-hl,
+.water-content .ts-fresh {
+    color: inherit;
+    opacity: .85;
+}
+
+/* Three offset sine-ish bands, drifting at different speeds for a parallax surface. */
+.wt-wave {
+    position: absolute;
+    left: -50%;
+    width: 200%;
+    height: 40%;
+    border-radius: 45%;
+    background: rgba(255, 255, 255, .18);
+    animation: wt-drift 9s linear infinite;
+}
+.wt-wave-back  { bottom: 18%; opacity: .5;  animation-duration: 13s; }
+.wt-wave-mid   { bottom: 8%;  opacity: .65; animation-duration: 10s; animation-direction: reverse; }
+.wt-wave-front { bottom: -6%; opacity: .8;  animation-duration: 7s; }
+
+@keyframes wt-drift {
+    0%   { transform: translateX(-8%) rotate(0deg); }
+    50%  { transform: translateX(8%)  rotate(1.5deg); }
+    100% { transform: translateX(-8%) rotate(0deg); }
+}
+
+/* Below the cold threshold: near-frozen, barely moving, with floating shards. */
+.wt-icy {
+    --wt-top: #dbeafe;
+    --wt-bottom: #60a5fa;
+}
+.wt-icy .wt-wave {
+    animation-duration: 24s;
+    opacity: .35;
+    height: 30%;
+}
+.wt-shard {
+    position: absolute;
+    left: var(--offset, 20%);
+    bottom: 22%;
+    width: clamp(8px, 9cqmin, 34px);
+    height: clamp(6px, 7cqmin, 26px);
+    background: rgba(255, 255, 255, .85);
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+    animation: wt-float 7s ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes wt-float {
+    0%, 100% { transform: translateY(0)    rotate(-8deg); }
+    50%      { transform: translateY(-6px) rotate(10deg); }
+}
+
+/* Cool: smaller, slower ripples than the baseline. */
+.wt-cool {
+    --wt-top: #a5d8f3;
+    --wt-bottom: #0369a1;
+}
+.wt-cool .wt-wave {
+    height: 32%;
+    animation-duration: 15s;
+    opacity: .5;
+}
+
+/* Comfortable: the baseline defined by .wt-wave above. */
+.wt-water {
+    --wt-top: #7dd3fc;
+    --wt-bottom: #0284c7;
+}
+
+/* Hot: warmer water with steam rising off the surface. */
+.wt-steamy {
+    --wt-top: #99e2f7;
+    --wt-bottom: #0e7490;
+}
+.wt-steamy .wt-wave {
+    animation-duration: 6s;
+}
+.wt-steam {
+    position: absolute;
+    left: var(--offset, 20%);
+    bottom: 30%;
+    width: clamp(6px, 7cqmin, 26px);
+    height: clamp(6px, 7cqmin, 26px);
+    background: rgba(255, 255, 255, .55);
+    border-radius: 50%;
+    filter: blur(3px);
+    opacity: 0;
+    animation: wt-rise 3.4s ease-out infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+@keyframes wt-rise {
+    0%   { transform: translateY(0)     scale(.6); opacity: 0; }
+    25%  { opacity: .6; }
+    100% { transform: translateY(-70px) scale(1.6); opacity: 0; }
+}
+
+/* ─── Test mode banner ───────────────────────────────────────────────────────
+   Deliberately loud and always on screen: simulated readings that quietly look real are how a
+   bug gets reported against data that was never measured. */
+.test-mode-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1080;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+    padding: .35rem .75rem;
+    background: repeating-linear-gradient(45deg,
+        #b45309 0 12px, #92400e 12px 24px);
+    color: #fff;
+    font-size: .85rem;
+}
+
 /* ─── Stale widget ───────────────────────────────────────────────────────── */
 .widget-stale .widget-body {
     opacity: 0.65;

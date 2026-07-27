@@ -189,7 +189,7 @@ public class WeatherDataService(
 
             // Named devices that do not exist: nothing can match.
             if (deviceScoped && deviceIds.Count == 0)
-                return new HistoryResult([], []);
+                return new HistoryResult([], [], new Dictionary<int, DeviceRef>());
         }
 
         var filterDevices = deviceScoped && deviceIds.Count > 0;
@@ -254,7 +254,21 @@ public class WeatherDataService(
                 new AggregateDataPoint(DateTime.SpecifyKind(r.PeriodStart, DateTimeKind.Utc), r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId)));
         }
 
-        return new HistoryResult(rawPoints, aggPoints);
+        // Resolve only the devices actually present in the result, so callers can key series by
+        // channel and device instead of collapsing two sensors on one canonical channel.
+        var presentDeviceIds = rawPoints.Where(p => p.DeviceId is not null).Select(p => p.DeviceId!.Value)
+            .Concat(aggPoints.Where(p => p.DeviceId is not null).Select(p => p.DeviceId!.Value))
+            .Distinct()
+            .ToList();
+
+        var devices = presentDeviceIds.Count == 0
+            ? new Dictionary<int, DeviceRef>()
+            : await dbContext.Devices
+                .Where(d => presentDeviceIds.Contains(d.Id))
+                .Select(d => new { d.Id, d.DeviceId, d.Name })
+                .ToDictionaryAsync(d => d.Id, d => new DeviceRef(d.DeviceId, d.Name), ct);
+
+        return new HistoryResult(rawPoints, aggPoints, devices);
     }
 
     // ── Channel records ───────────────────────────────────────────────────────

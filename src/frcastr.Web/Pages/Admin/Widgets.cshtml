@@ -83,6 +83,7 @@
 </div>
 
 @section Scripts {
+<script src="~/js/admin-api.js" asp-append-version="true"></script>
 <script>
 function openAddModal() {
     document.getElementById('widgetId').value = '0';
@@ -137,8 +138,7 @@ async function saveWidget() {
 
 async function deleteWidget(id, title) {
     if (!confirm('Delete widget "' + title + '"?')) return;
-    await fetch('/api/admin/widgets/' + id, { method: 'DELETE' });
-    location.reload();
+    await adminFetch('/api/admin/widgets/' + id, { method: 'DELETE' });
 }
 </script>
 }

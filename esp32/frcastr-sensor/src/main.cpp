@@ -137,7 +137,7 @@ static void publishReading() {
 
 void setup() {
     Serial.begin(115200);
-    delay(500);
+    delay(1000);
     Serial.printf("\nfrcastr sensor %s (device %s)\n", FIRMWARE_VERSION, DEVICE_ID);
 
     snprintf(stateTopic,  sizeof(stateTopic),  "%s/%s/state",  MQTT_TOPIC_ROOT, DEVICE_ID);
