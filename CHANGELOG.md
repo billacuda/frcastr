@@ -2,6 +2,11 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.6.1] - 2026-07-26
+
+### Fixed
+- **Humidity vanished from a temperature tile bound to a device's own channel**: companion channels (humidity, dew point) were resolved from the widget's *canonical* channel rather than the one it is actually bound to, so a tile on `temperature@indoor-01` — what a source publishes when its `fieldMapping` names bare `temperature`/`humidity` instead of a room — looked for `humidity.indoor@indoor-01` and then `humidity.indoor`, neither of which exists, and showed no humidity at all. The outdoor tile hid the same bug behind a wrong answer: `humidity.outdoor` from the pull source existed, so the sensor's tile paired its own temperature with the NWS station's humidity. Companions are now derived by swapping the leading segment of the bound channel (`temperature@indoor-01` → `humidity@indoor-01`, `temperature.attic` → `humidity.attic`) and resolved most-specific first — the bound channel's companion on the bound device, then the canonical companion on that device, then the same two station-wide. Widgets bound to canonical channels resolve exactly as before.
+
 ## [0.6.0] - 2026-07-26
 
 ### Added

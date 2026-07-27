@@ -17,10 +17,36 @@ window.WeatherWidgets = (function () {
         return i > 0 ? key.slice(i) : '';
     }
 
+    // "temperature.indoor@indoor-01" -> "temperature.indoor"; the key without its device.
+    function channelBase(key) {
+        var sfx = deviceSuffix(key);
+        return sfx ? key.slice(0, key.length - sfx.length) : (key || '');
+    }
+
+    // The companion of a channel that is not the canonical one: swap the leading segment, so
+    // "temperature" pairs with "humidity" and "temperature.attic" with "humidity.attic". A
+    // source whose fieldMapping never named a room publishes bare "temperature"/"humidity", and
+    // assuming the canonical name left those widgets pairing with another sensor's reading, or
+    // with nothing. Returns null when the bound channel is not of the canonical family.
+    function companionOf(base, canonicalCh, companionCh) {
+        var from = canonicalCh.split('.')[0];
+        var to   = companionCh.split('.')[0];
+        if (base === from) return to;
+        if (base.indexOf(from + '.') === 0) return to + base.slice(from.length);
+        return null;
+    }
+
     // Companion channels follow the device of the channel they accompany, falling back to the
     // station-wide reading for devices that report only some of a widget's channels.
-    function companionReading(data, channel, suffix) {
-        return (suffix ? reading(data, channel + suffix) : null) || reading(data, channel);
+    function companionReading(data, boundKey, canonicalCh, companionCh) {
+        var sfx     = deviceSuffix(boundKey);
+        var swapped = companionOf(channelBase(boundKey), canonicalCh, companionCh);
+        // Most specific first: the bound channel's own companion on the bound device, then the
+        // canonical companion on that device, then the same two station-wide.
+        return (swapped && sfx ? reading(data, swapped + sfx) : null)
+            || (sfx ? reading(data, companionCh + sfx) : null)
+            || (swapped ? reading(data, swapped) : null)
+            || reading(data, companionCh);
     }
 
     function val(r) { return r != null ? Number(r.value) : null; }
@@ -337,7 +363,6 @@ window.WeatherWidgets = (function () {
     // outright; where one is offered, config.showDewpoint can still hide it, matching widget 3/4.
     function renderTempHumidity(el, config, data, tempCh, humCh, dewCh) {
         var ch    = config.channel || tempCh;
-        var sfx   = deviceSuffix(ch);
         var r     = reading(data, ch);
         var v     = val(r);
         var u     = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
@@ -348,11 +373,11 @@ window.WeatherWidgets = (function () {
         if (config.showHumidity !== false) {
             var hr  = config.humidityChannel
                 ? reading(data, config.humidityChannel)
-                : companionReading(data, humCh, sfx);
+                : companionReading(data, ch, tempCh, humCh);
             var hv  = val(hr);
             var dpD = null;
             if (dewCh && config.showDewpoint !== false) {
-                var dpV = val(companionReading(data, dewCh, sfx));
+                var dpV = val(companionReading(data, ch, tempCh, dewCh));
                 dpD = dpV != null ? (u === 'F' ? toF(dpV) : dpV) : null;
             }
             if (hv != null) {
@@ -395,7 +420,7 @@ window.WeatherWidgets = (function () {
         var showDp = config.showDewpoint !== false;
         // Follow the bound device, so a widget on "humidity.indoor@attic-02" pairs the reading
         // with that room's dew point rather than the station's.
-        var dpR    = showDp ? companionReading(data, dewCh, deviceSuffix(ch)) : null;
+        var dpR    = showDp ? companionReading(data, ch, humCh, dewCh) : null;
         var dpV    = val(dpR);
         var dpD    = dpV != null ? (tu === 'F' ? toF(dpV) : dpV) : null;
 

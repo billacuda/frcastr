@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.6.0](CHANGELOG.md)**
+## **Current version [0.6.1](CHANGELOG.md)**
 
 ## Stack
 
@@ -130,6 +130,14 @@ Reference ESP32-S3 firmware implementing this contract lives in
 ## Dashboard widgets
 
 DateTime, Temperature (outdoor/indoor), Humidity (outdoor/indoor), Water Temperature, Pressure, Wind, Weather Animation, Forecast, Moon Phase, Sunrise/Sunset, Alerts, Feels Like, Rainfall, Pressure Trend, Air Quality, Radar, Custom channel.
+
+**Companion channels.** A temperature tile also shows humidity (and, outdoors, dew point); a humidity
+tile shows dew point. The companion follows whatever channel the widget is bound to rather than a
+fixed canonical name — bind a tile to `temperature@indoor-01` and it pairs with `humidity@indoor-01`,
+bind it to `temperature.attic` and it pairs with `humidity.attic`. Resolution runs most-specific
+first: the bound channel's companion on the bound device, the canonical companion on that device,
+then the same two station-wide, so a sensor that reports only temperature still borrows the
+station's humidity instead of showing nothing.
 
 **Water Temperature** reads `temperature.water` and draws the value over an animated pool scene that
 follows the reading — icy, cool, open water, or steamy. The thresholds default to 77 / 84 / 90 °F
