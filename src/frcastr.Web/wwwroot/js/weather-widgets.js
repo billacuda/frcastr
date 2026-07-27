@@ -11,6 +11,18 @@ window.WeatherWidgets = (function () {
         return (data && data.current && data.current.readings && data.current.readings[channel]) || null;
     }
 
+    // "temperature.indoor@indoor-01" -> "@indoor-01"; empty for station-wide keys.
+    function deviceSuffix(key) {
+        var i = key ? key.indexOf('@') : -1;
+        return i > 0 ? key.slice(i) : '';
+    }
+
+    // Companion channels follow the device of the channel they accompany, falling back to the
+    // station-wide reading for devices that report only some of a widget's channels.
+    function companionReading(data, channel, suffix) {
+        return (suffix ? reading(data, channel + suffix) : null) || reading(data, channel);
+    }
+
     function val(r) { return r != null ? Number(r.value) : null; }
     function unit(r) { return (r && r.unit) || ''; }
     function ts(r) { return (r && r.timestamp) || null; }
@@ -304,14 +316,16 @@ window.WeatherWidgets = (function () {
         renderTempHumidity(el, config, data, 'temperature.outdoor', 'humidity.outdoor', 'dewpoint.outdoor');
     };
 
-    // 2: Temperature Indoor (+ combined humidity + dew point)
+    // 2: Temperature Indoor (+ combined humidity)
     R[2] = function (el, config, data) {
-        renderTempHumidity(el, config, data, 'temperature.indoor', 'humidity.indoor', 'dewpoint.indoor');
+        renderTempHumidity(el, config, data, 'temperature.indoor', 'humidity.indoor', null);
     };
 
-    // Shared temp (+ optional humidity + dew point) renderer.
+    // Shared temp (+ optional humidity + dew point) renderer. A null dewCh omits the dew point
+    // outright; where one is offered, config.showDewpoint can still hide it, matching widget 3/4.
     function renderTempHumidity(el, config, data, tempCh, humCh, dewCh) {
         var ch    = config.channel || tempCh;
+        var sfx   = deviceSuffix(ch);
         var r     = reading(data, ch);
         var v     = val(r);
         var u     = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
@@ -320,11 +334,15 @@ window.WeatherWidgets = (function () {
 
         var secondary = [];
         if (config.showHumidity !== false) {
-            var hr  = reading(data, config.humidityChannel || humCh);
+            var hr  = config.humidityChannel
+                ? reading(data, config.humidityChannel)
+                : companionReading(data, humCh, sfx);
             var hv  = val(hr);
-            var dpR = reading(data, dewCh);
-            var dpV = val(dpR);
-            var dpD = dpV != null ? (u === 'F' ? toF(dpV) : dpV) : null;
+            var dpD = null;
+            if (dewCh && config.showDewpoint !== false) {
+                var dpV = val(companionReading(data, dewCh, sfx));
+                dpD = dpV != null ? (u === 'F' ? toF(dpV) : dpV) : null;
+            }
             if (hv != null) {
                 secondary.push(
                     '<div class="metric-sub d-flex align-items-baseline gap-1">' +
@@ -370,7 +388,9 @@ window.WeatherWidgets = (function () {
         var v      = val(r);
         var tu     = window.getTempUnit ? window.getTempUnit() : 'C';
         var showDp = config.showDewpoint !== false;
-        var dpR    = showDp ? reading(data, dewCh) : null;
+        // Follow the bound device, so a widget on "humidity.indoor@attic-02" pairs the reading
+        // with that room's dew point rather than the station's.
+        var dpR    = showDp ? companionReading(data, dewCh, deviceSuffix(ch)) : null;
         var dpV    = val(dpR);
         var dpD    = dpV != null ? (tu === 'F' ? toF(dpV) : dpV) : null;
 
@@ -602,7 +622,10 @@ window.WeatherWidgets = (function () {
 
     // 13: Feels Like
     R[13] = function (el, config, data) {
-        var r  = reading(data, 'feelslike.outdoor');
+        // The editor offers this widget a channel picker (SIMPLE_CHANNEL_TYPES), so honor it —
+        // it was saved to config and then ignored, which mattered once feels-like started being
+        // published per device as well as station-wide.
+        var r  = reading(data, config.channel || 'feelslike.outdoor');
         var v  = val(r);
         var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
         var dv = v == null ? null : (u === 'F' ? toF(v) : v);

@@ -224,8 +224,14 @@ public class MqttBackgroundService(
         var timestamp = DateTime.UtcNow;
         var accepted = new List<(string Channel, decimal Value)>();
 
-        foreach (var (channel, rawValue, unit) in parsed.Values)
+        // The source's fieldMapping names channels for every device on it alike; a device may
+        // redirect its own. Applied before validation so calibration offsets and sanity bounds are
+        // looked up under the channel the reading actually ends up on.
+        var overrides = DeviceChannelOverrides.Parse(device?.ChannelOverrides);
+
+        foreach (var (field, sourceChannel, rawValue, unit) in parsed.Values)
         {
+            var channel = DeviceChannelOverrides.Apply(overrides, field, sourceChannel);
             var adjusted = ChannelProcessing.ApplyAndValidate(channel, rawValue, managed.ConfigJson);
             if (adjusted is null)
             {

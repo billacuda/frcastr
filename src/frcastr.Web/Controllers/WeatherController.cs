@@ -35,17 +35,30 @@ public class WeatherController(
         var deviceIds = stale.Where(s => s.DeviceId is not null)
             .Select(s => s.DeviceId!.Value).Distinct().ToList();
 
-        var deviceKeys = deviceIds.Count == 0
+        var devices = deviceIds.Count == 0
             ? []
             : await db.Devices
                 .Where(d => deviceIds.Contains(d.Id))
-                .ToDictionaryAsync(d => d.Id, d => d.DeviceId, ct);
+                .Select(d => new { d.Id, d.DeviceId, d.IsPrimary })
+                .ToDictionaryAsync(d => d.Id, ct);
 
-        var staleKeys = stale
-            .Select(s => s.DeviceId is not null && deviceKeys.TryGetValue(s.DeviceId.Value, out var key)
-                ? ChannelKey.Format(s.ChannelName, key)
-                : s.ChannelName)
-            .ToList();
+        var staleKeys = new List<string>();
+        foreach (var s in stale)
+        {
+            if (s.DeviceId is null || !devices.TryGetValue(s.DeviceId.Value, out var device))
+            {
+                staleKeys.Add(s.ChannelName);
+                continue;
+            }
+
+            staleKeys.Add(ChannelKey.Format(s.ChannelName, device.DeviceId));
+
+            // The primary device's readings are also published under the bare canonical key, so a
+            // widget still bound to "temperature.indoor" has to go stale with it — otherwise the
+            // tile kept showing a last-known value with no warning that the sensor had stopped.
+            if (device.IsPrimary && !staleKeys.Contains(s.ChannelName))
+                staleKeys.Add(s.ChannelName);
+        }
 
         return Ok(new { readings, staleChannels = staleKeys });
     }
@@ -143,16 +156,56 @@ public class WeatherController(
         var startUtc = TimeZoneInfo.ConvertTimeToUtc(todayLocal, tz);
         var result = await weatherData.GetHistoryAsync([], startUtc, startUtc.AddDays(1), ct);
 
-        var extremes = result.RawPoints
-            .GroupBy(p => p.ChannelName)
-            .ToDictionary(
-                g => g.Key,
-                g => new { min = (double)g.Min(p => p.Value), max = (double)g.Max(p => p.Value) });
+        // Device-scoped keys ("temperature.indoor@indoor-01") are emitted alongside the bare ones,
+        // because a widget bound to one device's channel looked itself up by that key and found
+        // nothing here — the reason a device-scoped tile showed a live value but no high/low.
+        var devices = await db.Devices
+            .Select(d => new { d.Id, d.DeviceId, d.IsPrimary })
+            .ToListAsync(ct);
 
-        foreach (var grp in result.AggregatePoints.GroupBy(p => p.ChannelName))
+        var deviceKeys = devices.ToDictionary(d => d.Id, d => d.DeviceId);
+        var primaryId = devices.FirstOrDefault(d => d.IsPrimary)?.Id;
+
+        var extremes = new Dictionary<string, object>();
+
+        // Raw wins over aggregate for the same key, matching the previous precedence.
+        void Put(string key, double min, double max)
         {
-            if (!extremes.ContainsKey(grp.Key))
-                extremes[grp.Key] = new { min = (double)grp.Min(p => p.Min), max = (double)grp.Max(p => p.Max) };
+            if (!extremes.ContainsKey(key)) extremes[key] = new { min, max };
+        }
+
+        // A bare channel name answers for the station: sourceless readings plus the primary
+        // device's, which is exactly the set GetCurrentReadingsAsync publishes under that key.
+        // Pooling every device into it gave one tile its live value from one sensor and its
+        // high/low from another — two indoor sensors, and the warmer one set the day's high.
+        bool IsStationWide(int? deviceId) => deviceId is null || deviceId == primaryId;
+
+        foreach (var g in result.RawPoints
+                     .Where(p => IsStationWide(p.DeviceId))
+                     .GroupBy(p => p.ChannelName))
+            Put(g.Key, (double)g.Min(p => p.Value), (double)g.Max(p => p.Value));
+
+        foreach (var g in result.RawPoints
+                     .Where(p => p.DeviceId is not null)
+                     .GroupBy(p => new { p.ChannelName, DeviceId = p.DeviceId!.Value }))
+        {
+            if (deviceKeys.TryGetValue(g.Key.DeviceId, out var deviceKey))
+                Put(ChannelKey.Format(g.Key.ChannelName, deviceKey),
+                    (double)g.Min(p => p.Value), (double)g.Max(p => p.Value));
+        }
+
+        foreach (var g in result.AggregatePoints
+                     .Where(p => IsStationWide(p.DeviceId))
+                     .GroupBy(p => p.ChannelName))
+            Put(g.Key, (double)g.Min(p => p.Min), (double)g.Max(p => p.Max));
+
+        foreach (var g in result.AggregatePoints
+                     .Where(p => p.DeviceId is not null)
+                     .GroupBy(p => new { p.ChannelName, DeviceId = p.DeviceId!.Value }))
+        {
+            if (deviceKeys.TryGetValue(g.Key.DeviceId, out var deviceKey))
+                Put(ChannelKey.Format(g.Key.ChannelName, deviceKey),
+                    (double)g.Min(p => p.Min), (double)g.Max(p => p.Max));
         }
 
         return Ok(extremes);

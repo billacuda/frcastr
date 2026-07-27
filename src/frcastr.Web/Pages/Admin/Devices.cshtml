@@ -35,7 +35,7 @@
                     @foreach (var d in Model.Devices)
                     {
                         var stale = Model.IsStale(d);
-                        <tr id="dev-@d.Id" data-device='@System.Text.Json.JsonSerializer.Serialize(new { d.Id, d.Name, d.Location, d.Model, d.IsEnabled, d.OfflineThresholdMinutes }, frcastr.Web.Pages.Admin.DevicesModel.JsonOpts)'>
+                        <tr id="dev-@d.Id" data-device='@System.Text.Json.JsonSerializer.Serialize(new { d.Id, d.DeviceId, d.Name, d.Location, d.Model, d.IsEnabled, d.OfflineThresholdMinutes, d.ChannelOverrides }, frcastr.Web.Pages.Admin.DevicesModel.JsonOpts)'>
                             <td class="small font-monospace">@d.DeviceId</td>
                             <td class="fw-semibold">@d.Name</td>
                             <td class="small">@(string.IsNullOrWhiteSpace(d.Location) ? "–" : d.Location)</td>
@@ -87,11 +87,17 @@
             publishes its readings under the bare channel name so existing widgets keep working.
             Stale threshold defaults to @Model.GlobalThresholdMinutes minutes.
         </p>
+        <p class="small text-body-secondary">
+            The channel names themselves come from the data source's <code>fieldMapping</code>, which
+            applies to every device on that source. Use <strong>Edit → Channel overrides</strong> to send
+            one device's readings somewhere else — an outdoor sensor sharing a source with an indoor one
+            needs <code>temperature</code> → <code>temperature.outdoor</code>.
+        </p>
     }
 </div>
 
 <div class="modal fade" id="deviceModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Edit Device</h5>
@@ -114,6 +120,30 @@
                         <input class="form-check-input" type="checkbox" id="deviceEnabled" checked />
                         <label class="form-check-label" for="deviceEnabled">Enabled</label>
                     </div></div>
+
+                    <div class="col-12">
+                        <hr class="my-1" />
+                        <label class="form-label mb-1">Channel overrides</label>
+                        <div class="form-text mt-0 mb-2">
+                            The data source names channels for all of its devices at once. Map a payload
+                            field (<code>temperature</code>) — or the channel the source resolved it to
+                            (<code>temperature.indoor</code>) — to the channel this device should use.
+                        </div>
+                        <div id="overrideRows" class="vstack gap-2"></div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-2"
+                                onclick="addOverrideRow('', '')">Add override</button>
+                    </div>
+
+                    <div class="col-12" id="rekeySection" style="display:none">
+                        <hr class="my-1" />
+                        <label class="form-label mb-1">Stored history</label>
+                        <div class="form-text mt-0 mb-2">
+                            Overrides only redirect <em>new</em> readings. Fill in a target to move this
+                            device's existing rows onto the new channel as well; leave it blank to keep
+                            them where they are.
+                        </div>
+                        <div id="rekeyRows" class="vstack gap-2"></div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -126,6 +156,95 @@
 
 @section Scripts {
 <script>
+function escAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function addOverrideRow(field, channel) {
+    const row = document.createElement('div');
+    row.className = 'input-group input-group-sm override-row';
+    row.innerHTML =
+        '<input type="text" class="form-control override-field" placeholder="temperature" value="' + escAttr(field) + '" />' +
+        '<span class="input-group-text">&rarr;</span>' +
+        '<input type="text" class="form-control override-channel" placeholder="temperature.outdoor" value="' + escAttr(channel) + '" />' +
+        '<button type="button" class="btn btn-outline-danger" title="Remove">&times;</button>';
+    row.querySelector('button').onclick = function () { row.remove(); };
+    document.getElementById('overrideRows').appendChild(row);
+}
+
+function collectOverrides() {
+    const map = {};
+    document.querySelectorAll('#overrideRows .override-row').forEach(function (row) {
+        const f = row.querySelector('.override-field').value.trim();
+        const c = row.querySelector('.override-channel').value.trim();
+        if (f && c) map[f] = c;
+    });
+    return Object.keys(map).length ? JSON.stringify(map) : null;
+}
+
+// A stored channel and an override target belong together when they share a family — the part
+// before the first dot. "temperature.indoor" and "temperature.outdoor" are the same measurement
+// in a different place, which is exactly the rename this panel exists for.
+function suggestTarget(storedChannel, overrides) {
+    const family = storedChannel.split('.')[0].toLowerCase();
+    const hit = Object.keys(overrides).find(function (k) {
+        const target = overrides[k];
+        return target.toLowerCase() !== storedChannel.toLowerCase() &&
+               target.split('.')[0].toLowerCase() === family;
+    });
+    return hit ? overrides[hit] : null;
+}
+
+async function loadStoredChannels(id) {
+    const section = document.getElementById('rekeySection');
+    const rows = document.getElementById('rekeyRows');
+    rows.innerHTML = '';
+    section.style.display = 'none';
+
+    let channels;
+    try {
+        const r = await fetch('/api/admin/devices/' + id + '/channels');
+        if (!r.ok) return;
+        channels = await r.json();
+    } catch (e) { return; }
+    if (!channels || !channels.length) return;
+
+    const overrides = JSON.parse(collectOverrides() || '{}');
+
+    channels.forEach(function (c) {
+        const counts = c.readings.toLocaleString() + ' readings' +
+            (c.aggregates ? ' · ' + c.aggregates.toLocaleString() + ' aggregates' : '') +
+            (c.records ? ' · record' : '');
+        const suggestion = suggestTarget(c.channel, overrides);
+
+        const row = document.createElement('div');
+        row.className = 'rekey-row';
+        row.dataset.from = c.channel;
+        row.innerHTML =
+            '<div class="input-group input-group-sm">' +
+            '<span class="input-group-text font-monospace">' + escAttr(c.channel) + '</span>' +
+            '<span class="input-group-text">&rarr;</span>' +
+            '<input type="text" class="form-control rekey-to" placeholder="leave blank to keep" ' +
+                   'value="' + escAttr(suggestion || '') + '" />' +
+            '</div>' +
+            '<div class="form-text mt-0">' + counts + '</div>';
+        rows.appendChild(row);
+    });
+
+    section.style.display = '';
+}
+
+function collectRekeys() {
+    const pairs = [];
+    document.querySelectorAll('#rekeyRows .rekey-row').forEach(function (row) {
+        const from = row.dataset.from;
+        const to = row.querySelector('.rekey-to').value.trim();
+        if (to && to.toLowerCase() !== from.toLowerCase()) pairs.push({ from: from, to: to });
+    });
+    return pairs;
+}
+
 function openEditModal(id) {
     const d = JSON.parse(document.getElementById('dev-' + id).dataset.device);
     document.getElementById('deviceId').value = id;
@@ -134,7 +253,15 @@ function openEditModal(id) {
     document.getElementById('deviceModel').value = d.model || '';
     document.getElementById('deviceThreshold').value = d.offlineThresholdMinutes || 0;
     document.getElementById('deviceEnabled').checked = d.isEnabled;
+
+    document.getElementById('overrideRows').innerHTML = '';
+    let overrides = {};
+    try { overrides = JSON.parse(d.channelOverrides || '{}'); } catch (e) { overrides = {}; }
+    Object.keys(overrides).forEach(function (k) { addOverrideRow(k, overrides[k]); });
+    if (!Object.keys(overrides).length) addOverrideRow('', '');
+
     new bootstrap.Modal('#deviceModal').show();
+    loadStoredChannels(id);
 }
 
 async function saveDevice() {
@@ -144,12 +271,28 @@ async function saveDevice() {
         location: document.getElementById('deviceLocation').value,
         model: document.getElementById('deviceModel').value,
         offlineThresholdMinutes: parseInt(document.getElementById('deviceThreshold').value) || 0,
-        isEnabled: document.getElementById('deviceEnabled').checked
+        isEnabled: document.getElementById('deviceEnabled').checked,
+        channelOverrides: collectOverrides()
     };
     const r = await fetch('/api/admin/devices/' + id, {
         method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
-    if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
+    if (!r.ok) { alert('Error: ' + await r.text()); return; }
+
+    // History only moves when the admin asked for it, so this runs after the save succeeded and
+    // reports what it touched rather than doing it silently.
+    const pairs = collectRekeys();
+    if (pairs.length) {
+        const rk = await fetch('/api/admin/devices/' + id + '/rekey', {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(pairs)
+        });
+        if (!rk.ok) { alert('Saved, but re-keying failed: ' + await rk.text()); return; }
+        const res = await rk.json();
+        alert('Re-keyed ' + res.readings.toLocaleString() + ' readings, ' +
+              res.aggregates.toLocaleString() + ' aggregates and ' +
+              (res.records + res.mergedRecords) + ' record row(s).');
+    }
+    location.reload();
 }
 
 async function toggleDevice(id) {

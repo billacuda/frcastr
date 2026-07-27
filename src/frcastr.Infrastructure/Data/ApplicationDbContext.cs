@@ -128,6 +128,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(d => d.Location).HasMaxLength(200);
             e.Property(d => d.Model).HasMaxLength(100);
             e.Property(d => d.FirmwareVersion).HasMaxLength(50);
+            e.Property(d => d.ChannelOverrides).HasMaxLength(2000);
             e.HasIndex(d => d.DeviceId).IsUnique();
             e.HasIndex(d => d.LastSeenAt);
             e.HasOne(d => d.Source).WithMany()

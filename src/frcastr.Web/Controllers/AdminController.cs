@@ -5,6 +5,7 @@ using frcastr.Core.Entities;
 using frcastr.Core.Enums;
 using frcastr.Core.Interfaces;
 using frcastr.Infrastructure.Data;
+using frcastr.Infrastructure.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -63,7 +64,7 @@ public class AdminController(
                 d.SourceId,
                 SourceName = d.Source != null ? d.Source.Name : null,
                 d.IsEnabled, d.IsPrimary, d.IsOnline, d.LastSeenAt,
-                d.OfflineThresholdMinutes, d.CreatedAt
+                d.OfflineThresholdMinutes, d.ChannelOverrides, d.CreatedAt
             })
             .ToListAsync(ct);
         return Ok(devices);
@@ -75,17 +76,202 @@ public class AdminController(
         var device = await db.Devices.FindAsync([id], ct);
         if (device is null) return NotFound();
 
+        if (!DeviceChannelOverrides.TryNormalize(dto.ChannelOverrides, out var overrides, out var error))
+            return BadRequest(error);
+
         device.Name                    = string.IsNullOrWhiteSpace(dto.Name) ? device.Name : dto.Name.Trim();
         device.Location                = string.IsNullOrWhiteSpace(dto.Location) ? null : dto.Location.Trim();
         device.Model                   = string.IsNullOrWhiteSpace(dto.Model) ? null : dto.Model.Trim();
         device.IsEnabled               = dto.IsEnabled;
         device.OfflineThresholdMinutes = dto.OfflineThresholdMinutes > 0 ? dto.OfflineThresholdMinutes : 0;
+        device.ChannelOverrides        = overrides;
 
         await db.SaveChangesAsync(ct);
         await audit.LogAsync("Device.Updated",
             userId: UserId(), userName: UserName(),
             entityType: "Device", entityId: id.ToString(), entityName: device.Name, ct: ct);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Channels this device already has history under, with row counts. Backs the re-key UI:
+    /// changing an override only redirects future readings, so the admin needs to see what is
+    /// still filed under the old name.
+    /// </summary>
+    [HttpGet("devices/{id:int}/channels")]
+    public async Task<IActionResult> GetDeviceChannels(int id, CancellationToken ct)
+    {
+        if (!await db.Devices.AnyAsync(d => d.Id == id, ct)) return NotFound();
+
+        var readings = await db.WeatherReadings.Where(r => r.DeviceId == id)
+            .GroupBy(r => r.ChannelName)
+            .Select(g => new { Channel = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var aggregates = await db.WeatherReadingAggregates.Where(a => a.DeviceId == id)
+            .GroupBy(a => a.ChannelName)
+            .Select(g => new { Channel = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        var records = await db.WeatherChannelRecords.Where(r => r.DeviceId == id)
+            .Select(r => r.ChannelName)
+            .ToListAsync(ct);
+
+        var channels = readings.Select(r => r.Channel)
+            .Concat(aggregates.Select(a => a.Channel))
+            .Concat(records)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .Select(c => new
+            {
+                channel    = c,
+                readings   = readings.FirstOrDefault(r => r.Channel == c)?.Count ?? 0,
+                aggregates = aggregates.FirstOrDefault(a => a.Channel == c)?.Count ?? 0,
+                records    = records.Count(r => r == c)
+            })
+            .ToList();
+
+        return Ok(channels);
+    }
+
+    /// <summary>
+    /// Renames a device's stored channels, so history follows a changed channel override instead of
+    /// being stranded under the old name. Only this device's rows are touched.
+    /// </summary>
+    [HttpPost("devices/{id:int}/rekey")]
+    public async Task<IActionResult> RekeyDeviceChannels(int id,
+        [FromBody] List<ChannelRekeyDto> pairs, CancellationToken ct)
+    {
+        var device = await db.Devices.FindAsync([id], ct);
+        if (device is null) return NotFound();
+        if (pairs is null || pairs.Count == 0) return BadRequest("No channels to re-key.");
+
+        var moves = new List<(string From, string To)>();
+        foreach (var p in pairs)
+        {
+            var from = (p.From ?? "").Trim();
+            var to = (p.To ?? "").Trim();
+            if (from.Length == 0 || to.Length == 0) continue;
+            if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!DeviceChannelOverrides.IsValidChannel(to, out var error)) return BadRequest(error);
+            moves.Add((from, to));
+        }
+
+        if (moves.Count == 0) return BadRequest("No channels to re-key.");
+
+        var movedReadings = 0;
+        var movedAggregates = 0;
+        var movedRecords = 0;
+        var mergedRecords = 0;
+        var mergedAggregates = 0;
+
+        // ExecuteUpdate runs immediately while the record merges wait for SaveChanges, so without a
+        // transaction a failure partway through would leave readings renamed and records not.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        foreach (var (from, to) in moves)
+        {
+            movedReadings += await db.WeatherReadings
+                .Where(r => r.DeviceId == id && r.ChannelName == from)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.ChannelName, to), ct);
+
+            movedAggregates += await db.WeatherReadingAggregates
+                .Where(a => a.DeviceId == id && a.ChannelName == from)
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.ChannelName, to), ct);
+
+            mergedAggregates += await MergeDuplicateAggregatesAsync(id, to, ct);
+
+            // Records are unique per (channel, device), so a pre-existing row on the target has to
+            // absorb the moved one rather than collide with it.
+            var target = await db.WeatherChannelRecords
+                .FirstOrDefaultAsync(r => r.DeviceId == id && r.ChannelName == to, ct);
+            var source = await db.WeatherChannelRecords
+                .FirstOrDefaultAsync(r => r.DeviceId == id && r.ChannelName == from, ct);
+
+            if (source is null) continue;
+
+            if (target is null)
+            {
+                source.ChannelName = to;
+                movedRecords++;
+            }
+            else
+            {
+                if (source.AllTimeMax > target.AllTimeMax)
+                {
+                    target.AllTimeMax = source.AllTimeMax;
+                    target.AllTimeMaxAt = source.AllTimeMaxAt;
+                    target.AllTimeMaxSourceId = source.AllTimeMaxSourceId;
+                }
+                if (source.AllTimeMin < target.AllTimeMin)
+                {
+                    target.AllTimeMin = source.AllTimeMin;
+                    target.AllTimeMinAt = source.AllTimeMinAt;
+                    target.AllTimeMinSourceId = source.AllTimeMinSourceId;
+                }
+                db.WeatherChannelRecords.Remove(source);
+                mergedRecords++;
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
+        await audit.LogAsync("Device.ChannelsRekeyed",
+            userId: UserId(), userName: UserName(),
+            entityType: "Device", entityId: id.ToString(), entityName: device.Name,
+            newValue: string.Join(", ", moves.Select(m => $"{m.From} → {m.To}")), ct: ct);
+
+        return Ok(new
+        {
+            readings = movedReadings,
+            aggregates = movedAggregates,
+            records = movedRecords,
+            mergedRecords,
+            mergedAggregates
+        });
+    }
+
+    /// <summary>
+    /// Collapses aggregate rows that now share a period with the channel they were moved onto.
+    /// Averages are re-weighted by sample count so the merged row still reflects every reading.
+    /// </summary>
+    private async Task<int> MergeDuplicateAggregatesAsync(int deviceId, string channel, CancellationToken ct)
+    {
+        var duplicateKeys = await db.WeatherReadingAggregates
+            .Where(a => a.DeviceId == deviceId && a.ChannelName == channel)
+            .GroupBy(a => new { a.Granularity, a.PeriodStart, a.SourceId })
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToListAsync(ct);
+
+        if (duplicateKeys.Count == 0) return 0;
+
+        var merged = 0;
+        foreach (var key in duplicateKeys)
+        {
+            var rows = await db.WeatherReadingAggregates
+                .Where(a => a.DeviceId == deviceId && a.ChannelName == channel
+                         && a.Granularity == key.Granularity && a.PeriodStart == key.PeriodStart
+                         && a.SourceId == key.SourceId)
+                .ToListAsync(ct);
+
+            if (rows.Count < 2) continue;
+
+            var keep = rows[0];
+            var totalCount = rows.Sum(r => r.Count);
+            keep.Avg = totalCount > 0
+                ? rows.Sum(r => r.Avg * r.Count) / totalCount
+                : rows.Average(r => r.Avg);
+            keep.Min = rows.Min(r => r.Min);
+            keep.Max = rows.Max(r => r.Max);
+            keep.Count = totalCount;
+
+            db.WeatherReadingAggregates.RemoveRange(rows.Skip(1));
+            merged += rows.Count - 1;
+        }
+
+        return merged;
     }
 
     [HttpDelete("devices/{id:int}")]
@@ -563,7 +749,11 @@ public class AdminController(
         string? Location,
         string? Model,
         bool IsEnabled,
-        int OfflineThresholdMinutes);
+        int OfflineThresholdMinutes,
+        string? ChannelOverrides = null);
+
+    /// <summary>One channel rename for a device's stored history.</summary>
+    public record ChannelRekeyDto(string From, string To);
 
     public record WidgetDto(
         WidgetType Type,

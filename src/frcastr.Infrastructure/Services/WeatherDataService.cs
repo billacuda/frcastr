@@ -88,30 +88,37 @@ public class WeatherDataService(
             channels[channel + suffix] = new CurrentReading(channel, value, "°C", ts, 0,
                 IsCalculated: true, DeviceId: from.DeviceId, DeviceKey: from.DeviceKey, DeviceName: from.DeviceName);
 
-        if (tOut is not null && hOut is not null)
+        static DateTime Latest(params CurrentReading?[] readings) =>
+            readings.Where(r => r is not null).Max(r => r!.Timestamp);
+
+        if (tOut is not null)
         {
-            var ts = tOut.Timestamp > hOut.Timestamp ? tOut.Timestamp : hOut.Timestamp;
-            var dp = DewPoint((double)tOut.Value, (double)hOut.Value);
-            Put("dewpoint.outdoor", (decimal)dp, ts, tOut);
-
-            if (wind is not null)
+            if (hOut is not null)
             {
-                var feelsTs = ts > wind.Timestamp ? ts : wind.Timestamp;
-                var fl = FeelsLike((double)tOut.Value, (double)hOut.Value, (double)wind.Value);
-                Put("feelslike.outdoor", (decimal)fl, feelsTs, tOut);
+                var ts = Latest(tOut, hOut);
+                var dp = DewPoint((double)tOut.Value, (double)hOut.Value);
+                Put("dewpoint.outdoor", (decimal)dp, ts, tOut);
 
-                if ((double)tOut.Value <= 10 && (double)wind.Value >= 4.8)
-                {
-                    var wc = WindChill((double)tOut.Value, (double)wind.Value);
-                    Put("windchill.outdoor", (decimal)wc, feelsTs, tOut);
-                }
-
-                if ((double)tOut.Value >= 27 && (double)hOut.Value >= 40)
+                // Heat index depends on temperature and humidity only — it does not need wind.
+                if (tOut.Value >= 27 && hOut.Value >= 40)
                 {
                     var hi = HeatIndex((double)tOut.Value, (double)hOut.Value);
                     Put("heatindex.outdoor", (decimal)hi, ts, tOut);
                 }
             }
+
+            // Wind chill is the one derived channel that genuinely requires wind.
+            if (wind is not null && tOut.Value <= 10 && wind.Value >= 4.8m)
+            {
+                var wc = WindChill((double)tOut.Value, (double)wind.Value);
+                Put("windchill.outdoor", (decimal)wc, Latest(tOut, wind), tOut);
+            }
+
+            // Feels-like is published whenever there is an outdoor temperature; humidity and wind
+            // refine it when available. Requiring all three meant stations without a wind sensor
+            // (an ESP32 reporting only temperature and humidity, say) never got the channel.
+            var fl = FeelsLike((double)tOut.Value, (double?)hOut?.Value, (double?)wind?.Value);
+            Put("feelslike.outdoor", (decimal)fl, Latest(tOut, hOut, wind), tOut);
         }
 
         if (tIn is not null && hIn is not null)
@@ -320,6 +327,15 @@ public class WeatherDataService(
          - 11.37 * Math.Pow(windKmh, 0.16)
          + 0.3965 * tempC * Math.Pow(windKmh, 0.16);
 
+    /// <summary>NWS heat index (Rothfusz regression with the two published adjustments).</summary>
+    /// <remarks>
+    /// Deliberately unclamped. The regression climbs steeply at the top end — 40 °C at 90 % RH gives
+    /// about 94 °C — but that combination implies a 38 °C dew point, which has never been recorded,
+    /// so it means a failing humidity sensor rather than weather. Capping it would hide that while
+    /// also truncating genuine extremes: 38 °C at 70 % RH is a real 61 °C heat index, and the world
+    /// record is around 81 °C. Individual inputs are already range-checked at ingest by
+    /// <see cref="frcastr.Infrastructure.Helpers.ChannelProcessing"/>.
+    /// </remarks>
     private static double HeatIndex(double tempC, double relHumidity)
     {
         var t = tempC * 9.0 / 5.0 + 32; // °F
@@ -333,15 +349,60 @@ public class WeatherDataService(
             + 0.00122874 * t * t * rh
             + 0.00085282 * t * rh * rh
             - 0.00000199 * t * t * rh * rh;
+
+        // Official adjustments for the corners where the regression is weakest.
+        if (rh < 13 && t is >= 80 and <= 112)
+            hi -= (13 - rh) / 4.0 * Math.Sqrt((17 - Math.Abs(t - 95)) / 17.0);
+        else if (rh > 85 && t is >= 80 and <= 87)
+            hi += (rh - 85) / 10.0 * ((87 - t) / 5.0);
+
         return (hi - 32) * 5.0 / 9.0; // back to °C
     }
 
-    private static double FeelsLike(double tempC, double relHumidity, double windKmh)
+    /// <summary>
+    /// Perceived temperature from air temperature, humidity and wind. Humidity and wind are
+    /// optional: the calculation degrades to whatever inputs the station actually reports.
+    /// </summary>
+    /// <remarks>
+    /// Three regimes. Wind chill and heat index are the accepted standards at the cold and hot
+    /// extremes, so they are used inside their published domains. Everywhere else — which is most
+    /// of the year — the Bureau of Meteorology apparent temperature applies, because it varies
+    /// continuously with all three inputs. The previous implementation returned the raw air
+    /// temperature outside the two extremes, so "feels like" simply mirrored the thermometer.
+    /// </remarks>
+    private static double FeelsLike(double tempC, double? relHumidity, double? windKmh)
     {
-        if (tempC <= 10 && windKmh >= 4.8)
-            return WindChill(tempC, windKmh);
+        var wind = windKmh ?? 0;
+
+        // Wind chill needs no humidity, so it still applies on a station without a humidity sensor.
+        if (tempC <= 10 && wind >= 4.8)
+            return WindChill(tempC, wind);
+
+        // Without humidity there is nothing left that can move the number.
+        if (relHumidity is null)
+            return tempC;
+
         if (tempC >= 27 && relHumidity >= 40)
-            return HeatIndex(tempC, relHumidity);
-        return tempC;
+            return HeatIndex(tempC, relHumidity.Value);
+
+        return ApparentTemperature(tempC, relHumidity.Value, wind);
+    }
+
+    /// <summary>
+    /// Australian Bureau of Meteorology apparent temperature, non-radiation form:
+    /// AT = Ta + 0.33e − 0.70ws − 4.00, with vapour pressure e in hPa and wind in m/s.
+    /// </summary>
+    /// <remarks>
+    /// The BOM also publishes a radiation form with a +0.70Q/(ws+10) term. It is deliberately not
+    /// used here: Q is net radiation absorbed by the body, not the global irradiance a pyranometer
+    /// reports on the <c>solar.radiation</c> channel. Substituting one for the other adds tens of
+    /// degrees on a sunny day.
+    /// </remarks>
+    private static double ApparentTemperature(double tempC, double relHumidity, double windKmh)
+    {
+        var windMs = windKmh / 3.6;
+        var vapourPressure = relHumidity / 100.0 * 6.105
+            * Math.Exp(17.27 * tempC / (237.7 + tempC));
+        return tempC + 0.33 * vapourPressure - 0.70 * windMs - 4.00;
     }
 }

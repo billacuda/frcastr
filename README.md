@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.4.2](CHANGELOG.md)**
+## **Current version [0.5.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -65,7 +65,8 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 One MQTT data source serves any number of sensor devices. A `topicPattern` extracts the device id
 from each topic, and devices register themselves the first time they publish — no restart, and no
-per-device configuration.
+per-device configuration. The `esp32-mqtt` preset under **Admin → Data Sources** pre-fills the
+config below.
 
 ```json
 {
@@ -100,6 +101,26 @@ Readings are addressed as `temperature.indoor@greenhouse-01`; channel names stay
 sanity bounds and calculated channels apply per device. Mark one device **primary** under
 **Admin → Devices** for its readings to also answer to the bare channel name that widgets bind to
 by default.
+
+**Channel overrides.** `fieldMapping` belongs to the data source, so it names channels the same way
+for every device on it — identical boards flashed from one sketch all publish `temperature`, and all
+land on whatever channel that field maps to. To place one device elsewhere, set a channel override
+under **Admin → Devices → Edit**:
+
+| Field | Channel |
+|---|---|
+| `temperature` | `temperature.outdoor` |
+| `humidity` | `humidity.outdoor` |
+
+The key matches either the payload field or the channel the source resolved it to; the value is the
+channel that device's readings are stored under, which is also what its sanity bounds, calibration
+offsets and calculated channels are then keyed on. Overrides apply to new readings — the same dialog
+lists what the device already has stored and can re-key that history onto the new channel names.
+
+**Admin → Devices** lists every registered device with its last-seen status, and is where you rename
+one, set its location, choose the primary, or disable it. Each device can carry its own offline
+threshold; when it goes quiet — or its last will publishes `offline` — frcastr emails a device-level
+alert. That check reads the stored last-seen timestamp, so it survives an app restart.
 
 Reference ESP32-S3 firmware implementing this contract lives in
 [`esp32/frcastr-sensor/`](esp32/frcastr-sensor/).

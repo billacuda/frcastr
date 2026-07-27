@@ -18,6 +18,19 @@ public class Device
     public string? Model { get; set; }
     public string? FirmwareVersion { get; set; }
 
+    /// <summary>
+    /// Optional per-device channel remapping, as a JSON object:
+    /// <c>{"temperature":"temperature.outdoor","humidity":"humidity.outdoor"}</c>.
+    /// <para>
+    /// A key matches either a payload field name from the source's <c>fieldMapping</c> or the
+    /// channel that mapping resolved to; the value is the channel this device's readings are
+    /// filed under instead. Channel names are decided per data source, so without this every
+    /// device sharing one source reports the same channels — an outdoor sensor alongside an
+    /// indoor one would land on <c>temperature.indoor</c> and pick up indoor sanity bounds.
+    /// </para>
+    /// </summary>
+    public string? ChannelOverrides { get; set; }
+
     /// <summary>The MQTT data source this device was last seen on.</summary>
     public int? SourceId { get; set; }
     public DataSource? Source { get; set; }

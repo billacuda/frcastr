@@ -14,7 +14,13 @@ public static class MqttPayloadParser
     private static readonly HashSet<string> ReservedKeys =
         new(StringComparer.OrdinalIgnoreCase) { "deviceId", "device", "firmware", "fw", "ts", "timestamp" };
 
-    public readonly record struct ParsedValue(string Channel, decimal Value, string Unit);
+    /// <summary>
+    /// <paramref name="Field"/> is the payload field the value arrived in (the {measure} topic
+    /// segment for bare-decimal payloads, or the topic itself for legacy channelMapping sources).
+    /// It is carried alongside the resolved channel so per-device overrides can key on it —
+    /// see <see cref="DeviceChannelOverrides"/>.
+    /// </summary>
+    public readonly record struct ParsedValue(string Field, string Channel, decimal Value, string Unit);
 
     public sealed record ParseResult(
         IReadOnlyList<ParsedValue> Values,
@@ -39,7 +45,8 @@ public static class MqttPayloadParser
         {
             var channel = ResolveChannel(config, topic, measure);
             if (channel is null) return Empty;
-            return new ParseResult([new ParsedValue(channel, single, config.GetUnit(channel))], null, null);
+            var field = string.IsNullOrWhiteSpace(measure) ? topic : measure;
+            return new ParseResult([new ParsedValue(field, channel, single, config.GetUnit(channel))], null, null);
         }
 
         if (trimmed[0] != '{') return Empty;
@@ -78,7 +85,7 @@ public static class MqttPayloadParser
                 if (!TryReadNumber(prop.Value, out var value)) continue;
 
                 var unit = string.IsNullOrWhiteSpace(map.Unit) ? config.GetUnit(map.Channel) : map.Unit;
-                values.Add(new ParsedValue(map.Channel, value, unit));
+                values.Add(new ParsedValue(prop.Name, map.Channel, value, unit));
             }
 
             return new ParseResult(values, deviceId, firmware);

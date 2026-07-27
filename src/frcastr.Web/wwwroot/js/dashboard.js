@@ -318,7 +318,7 @@
             case 5:  return [config.channel || 'pressure'];
             case 6:  return [config.speedChannel || 'wind.speed', config.directionChannel || 'wind.direction'];
             case 10: return config.channel ? [config.channel] : [];
-            case 13: return ['feelslike.outdoor'];
+            case 13: return [config.channel || 'feelslike.outdoor'];
             case 14: return [config.channel || 'rainfall'];
             case 15: return [config.channel || 'pressure'];
             case 16: return [config.channel || 'aqi.outdoor'];
