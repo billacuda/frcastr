@@ -62,7 +62,7 @@
                     </div>
                     <div id="awSimpleForecast" style="display:none" class="mb-2">
                         <div class="mb-2"><label class="form-label">Periods to show</label>
-                            <input type="number" class="form-control" id="awPeriods" min="1" max="14" value="5" style="max-width:120px" /></div>
+                            <input type="number" class="form-control" id="awPeriods" min="1" max="14" value="7" style="max-width:120px" /></div>
                         <p class="text-body-secondary small mb-0">Forecast data comes from all enabled forecast sources in Admin → Data Sources.</p>
                     </div>
                     <div id="awSimpleRadar" style="display:none">
@@ -117,6 +117,19 @@
                     <input type="color" class="form-control form-control-color" id="awColor" value="#0d6efd" title="Widget text color" />
                     <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
                 </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-6">
+                        <label class="form-label small mb-1" for="awPad">Padding <span class="text-body-secondary" id="awPadVal">4px</span></label>
+                        <input type="range" class="form-range" id="awPad" min="0" max="16" step="1" value="4" oninput="onDensityInput('aw')" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1" for="awFontScale">Text size <span class="text-body-secondary" id="awFontScaleVal">100%</span></label>
+                        <input type="range" class="form-range" id="awFontScale" min="60" max="200" step="5" value="100" oninput="onDensityInput('aw')" />
+                    </div>
+                    <div class="col-12">
+                        <span class="small text-body-secondary">Less padding leaves more room for the reading, which scales to fill the widget.</span>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -156,7 +169,7 @@
                     </div>
                     <div id="ewSimpleForecast" style="display:none" class="mb-2">
                         <div class="mb-2"><label class="form-label">Periods to show</label>
-                            <input type="number" class="form-control" id="ewPeriods" min="1" max="14" value="5" style="max-width:120px" /></div>
+                            <input type="number" class="form-control" id="ewPeriods" min="1" max="14" value="7" style="max-width:120px" /></div>
                         <p class="text-body-secondary small mb-0">Forecast data comes from all enabled forecast sources in Admin → Data Sources.</p>
                     </div>
                     <div id="ewSimpleRadar" style="display:none">
@@ -210,6 +223,19 @@
                 <div id="ewColorRow" style="display:none" class="d-flex align-items-center gap-2">
                     <input type="color" class="form-control form-control-color" id="ewColor" value="#0d6efd" title="Widget text color" />
                     <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
+                </div>
+                <div class="row g-3 mt-1">
+                    <div class="col-6">
+                        <label class="form-label small mb-1" for="ewPad">Padding <span class="text-body-secondary" id="ewPadVal">4px</span></label>
+                        <input type="range" class="form-range" id="ewPad" min="0" max="16" step="1" value="4" oninput="onDensityInput('ew')" />
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1" for="ewFontScale">Text size <span class="text-body-secondary" id="ewFontScaleVal">100%</span></label>
+                        <input type="range" class="form-range" id="ewFontScale" min="60" max="200" step="5" value="100" oninput="onDensityInput('ew')" />
+                    </div>
+                    <div class="col-12">
+                        <span class="small text-body-secondary">Less padding leaves more room for the reading, which scales to fill the widget. Changes preview live behind the dialog.</span>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">

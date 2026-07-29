@@ -26,6 +26,14 @@
         return fixed.slice(0, dot) + '<span class="temp-tenths">' + fixed.slice(dot) + '</span>';
     };
 
+    // Same conversion, always whole degrees. Forecasts are estimates, so a tenths digit would imply
+    // a precision the source doesn't have — they ignore Display.TemperatureDecimals deliberately.
+    window.formatTempWhole = function (celsiusValue) {
+        if (celsiusValue == null || isNaN(celsiusValue)) return '–';
+        var v = window.getTempUnit() === 'F' ? (celsiusValue * 9 / 5 + 32) : celsiusValue;
+        return String(Math.round(v));
+    };
+
     function updateTempUnitUI(unit) {
         var cEl = document.getElementById('tempUnitC');
         var fEl = document.getElementById('tempUnitF');

@@ -214,7 +214,12 @@ public class WeatherController(
     [HttpGet("records")]
     public async Task<IActionResult> Records(CancellationToken ct)
     {
-        var records = await weatherData.GetChannelRecordsAsync(ct);
+        // Wind direction is a compass bearing, not a magnitude — its all-time min/max converge on
+        // 0° and 359° and say nothing, so it is left out of the records table. The rows stay in the
+        // database and keep being written; they are just not served.
+        var records = (await weatherData.GetChannelRecordsAsync(ct))
+            .Where(r => !r.ChannelName.StartsWith("wind.direction", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
         // Records are stored per device, so two sensors on one canonical channel produce two rows.
         // Without the device they render as duplicates that differ only in their numbers.

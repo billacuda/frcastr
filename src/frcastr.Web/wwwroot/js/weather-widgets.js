@@ -292,14 +292,16 @@ window.WeatherWidgets = (function () {
             '</div>';
     }
 
-    // Today's high/low for a channel key, in the display unit. Returns null when the server has
-    // no extremes for that key — shared by every temperature tile so the three of them cannot
-    // drift apart on formatting.
-    function hiLowHtml(data, channelKey, unit) {
+    // Today's high/low for a channel key. `format` renders one raw value and defaults to the
+    // temperature treatment (display unit + degree sign), so the temperature tiles cannot drift
+    // apart on formatting; non-temperature tiles such as AQI pass their own. Returns null when the
+    // server has no extremes for that key.
+    function hiLowHtml(data, channelKey, format) {
         var ex = data && data.dailyExtremes && data.dailyExtremes[channelKey];
         if (!ex || (ex.max == null && ex.min == null)) return null;
-        return (ex.max != null ? '<span>H&thinsp;' + window.formatTemp(ex.max) + '&deg;</span>' : '') +
-               (ex.min != null ? '<span>L&thinsp;' + window.formatTemp(ex.min) + '&deg;</span>' : '') || null;
+        var f = format || function (v) { return window.formatTemp(v) + '&deg;'; };
+        return (ex.max != null ? '<span>H&thinsp;' + f(ex.max) + '</span>' : '') +
+               (ex.min != null ? '<span>L&thinsp;' + f(ex.min) + '</span>' : '') || null;
     }
 
     // ── Renderers ─────────────────────────────────────────────────────────────
@@ -385,7 +387,7 @@ window.WeatherWidgets = (function () {
             }
         }
 
-        var hiLow = hiLowHtml(data, ch, u);
+        var hiLow = hiLowHtml(data, ch);
 
         el.innerHTML = buildMetric({
             value:     window.formatTemp(v),
@@ -494,38 +496,50 @@ window.WeatherWidgets = (function () {
     // 8: Forecast
     R[8] = function (el, config, data) {
         var periods = (data && data.forecast && data.forecast.aggregated) || [];
-        var max  = Number(config.periods) || 5;
+        var max  = Number(config.periods) || 7;
         var u    = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
 
         // Prefer daytime periods so NWS night-first alternation doesn't show lows
         var dayPeriods = periods.filter(function (p) { return p.isDaytime !== false; });
         var source = dayPeriods.length ? dayPeriods : periods;
 
-        // Fit as many items as the container width allows, up to configured max
-        var availWidth = el.getBoundingClientRect().width || 300;
-        var maxFit = Math.max(1, Math.floor(availWidth / 72));
-        var list = source.slice(0, Math.min(max, maxFit));
+        // One entry per calendar day. With a single source this is a no-op, but aggregating two
+        // sources buckets by 6 hours × isDaytime, which can yield two daytime entries for one day —
+        // "7 periods" would then render as fewer than 7 days with a repeated weekday.
+        var seenDays = {};
+        source = source.filter(function (p) {
+            var d = new Date(utcTs(p.periodStart) || p.periodStart);
+            var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+            if (seenDays[key]) return false;
+            seenDays[key] = true;
+            return true;
+        });
+
+        // Every configured period is rendered; the .fc-* rules in site.css size the contents off
+        // the item count so they shrink to fit rather than being dropped.
+        var list = source.slice(0, max);
 
         if (!list.length) {
             el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-body-secondary small">No forecast data</div>';
             return;
         }
 
-        var html = '<div class="d-flex h-100 align-items-center overflow-hidden">';
+        var html = '<div class="d-flex h-100 overflow-hidden fc-strip" style="--fc-n:' + list.length + '">';
         list.forEach(function (p) {
             var d    = new Date(utcTs(p.periodStart) || p.periodStart);
             var day  = d.toLocaleDateString(undefined, { weekday: 'short' });
             var icon = conditionIcon(p.condition);
+            // Forecasts are estimates, so they stay whole-degree regardless of the tenths setting.
             var temp = p.temperature != null
-                ? window.formatTemp(p.temperature) + '&deg;' + u
+                ? window.formatTempWhole(p.temperature) + '&deg;' + u
                 : '&ndash;';
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
             html +=
-                '<div class="d-flex flex-column align-items-center gap-1" style="flex:1 1 0;min-width:0;overflow:hidden">' +
-                '<div class="text-body-secondary text-truncate w-100 text-center" style="font-size:clamp(0.75rem,3cqmin,1rem)">' + escHtml(day) + '</div>' +
-                '<div style="font-size:clamp(1.5rem,7cqmin,3.5rem);line-height:1">' + icon + '</div>' +
-                '<div class="fw-semibold" style="font-size:clamp(0.875rem,3.5cqmin,1.4rem)">' + temp + '</div>' +
-                (prcp ? '<div class="text-info" style="font-size:clamp(0.7rem,2.8cqmin,1rem)">' + prcp + '</div>' : '') +
+                '<div class="d-flex flex-column align-items-center fc-item">' +
+                '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(day) + '</div>' +
+                '<div class="fc-icon">' + icon + '</div>' +
+                '<div class="fw-semibold fc-temp">' + temp + '</div>' +
+                (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
         });
         html += '</div>';
@@ -777,11 +791,15 @@ window.WeatherWidgets = (function () {
         var secondary = (cat && show)
             ? ['<div class="metric-sub"><span class="badge text-bg-' + cat.cls + '">' + cat.label + '</span></div>']
             : [];
+        // AQI is a whole-number index, so it takes the temperature tiles' H/L line without the
+        // display-unit conversion or degree sign.
+        var hiLow = hiLowHtml(data, ch, function (x) { return fmt(x, 0); });
         el.innerHTML = buildMetric({
             value:      fmt(v, 0),
             unit:       'AQI',
             valueColor: cat ? cat.color : null,
             secondary:  secondary,
+            hiLow:      hiLow,
             footer:     tsHtml(ts(r))
         });
     };
@@ -909,10 +927,9 @@ window.WeatherWidgets = (function () {
         var max  = Number(config.periods) || 12;
         var u    = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
 
-        // Fit as many hours as the container width allows, up to configured max
-        var availWidth = el.getBoundingClientRect().width || 300;
-        var maxFit = Math.max(1, Math.floor(availWidth / 64));
-        var list = periods.slice(0, Math.min(max, maxFit));
+        // Every configured hour is rendered; the .fc-* rules in site.css size the contents off the
+        // item count so they shrink to fit rather than being dropped.
+        var list = periods.slice(0, max);
 
         if (!list.length) {
             el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-body-secondary small">No hourly forecast data</div>';
@@ -920,23 +937,24 @@ window.WeatherWidgets = (function () {
         }
 
         var use12h = config.format !== '24h';
-        var html = '<div class="d-flex h-100 align-items-center overflow-hidden">';
+        var html = '<div class="d-flex h-100 overflow-hidden fc-strip fc-hourly" style="--fc-n:' + list.length + '">';
         list.forEach(function (p) {
             var d    = new Date(utcTs(p.periodStart) || p.periodStart);
             var hour = use12h
                 ? (function () { var h = d.getHours(); var ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ampm; })()
                 : pad(d.getHours()) + ':00';
             var icon = conditionIcon(p.condition);
+            // Forecasts are estimates, so they stay whole-degree regardless of the tenths setting.
             var temp = p.temperature != null
-                ? window.formatTemp(p.temperature) + '&deg;' + u
+                ? window.formatTempWhole(p.temperature) + '&deg;' + u
                 : '&ndash;';
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
             html +=
-                '<div class="d-flex flex-column align-items-center gap-1" style="flex:1 1 0;min-width:0;overflow:hidden">' +
-                '<div class="text-body-secondary text-truncate w-100 text-center" style="font-size:clamp(0.75rem,3cqmin,1rem)">' + escHtml(hour) + '</div>' +
-                '<div style="font-size:clamp(1.3rem,6cqmin,3rem);line-height:1">' + icon + '</div>' +
-                '<div class="fw-semibold" style="font-size:clamp(0.875rem,3.5cqmin,1.4rem)">' + temp + '</div>' +
-                (prcp ? '<div class="text-info" style="font-size:clamp(0.7rem,2.8cqmin,1rem)">' + prcp + '</div>' : '') +
+                '<div class="d-flex flex-column align-items-center fc-item">' +
+                '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(hour) + '</div>' +
+                '<div class="fc-icon">' + icon + '</div>' +
+                '<div class="fw-semibold fc-temp">' + temp + '</div>' +
+                (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
         });
         html += '</div>';
@@ -997,7 +1015,7 @@ window.WeatherWidgets = (function () {
         var r  = reading(data, ch);
         var v  = val(r);
         var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
-        var hl = hiLowHtml(data, ch, u);
+        var hl = hiLowHtml(data, ch);
 
         // The value sits over the scene rather than inside buildMetric, whose flex column would
         // fight an absolutely-positioned background. The .metric-* classes are kept so the

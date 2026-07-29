@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.7.0](CHANGELOG.md)**
+## **Current version [0.8.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -138,6 +138,18 @@ bind it to `temperature.attic` and it pairs with `humidity.attic`. Resolution ru
 first: the bound channel's companion on the bound device, the canonical companion on that device,
 then the same two station-wide, so a sensor that reports only temperature still borrows the
 station's humidity instead of showing nothing.
+
+**Widget appearance.** Each widget carries its own text color, padding and text size, set in the
+Add/Edit Widget dialog and saved with the widget. Readings scale to fill the space they are given, so
+trimming padding on a small display buys directly larger numbers; the text size slider (60-200%) then
+tunes each widget on top of that. Edits preview live on the dashboard behind the dialog and revert if
+you cancel. A widget left on the defaults stores no override and keeps tracking them.
+
+**Forecast widgets** render every period they are configured for — up to 14 days, or hours for the
+hourly variant — sizing their contents from the period count rather than dropping the ones that don't
+fit. Labels, icons, temperatures and precipitation chances scale together, so the strip keeps its
+proportions at any widget size. Forecast temperatures are always whole degrees regardless of the
+**Display → Show tenths** setting, since a forecast is an estimate.
 
 **Water Temperature** reads `temperature.water` and draws the value over an animated pool scene that
 follows the reading — icy, cool, open water, or steamy. The thresholds default to 77 / 84 / 90 °F

@@ -2,6 +2,47 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.8.0] - 2026-07-28
+
+### Added
+- **Per-widget padding and text size**: the Add and Edit Widget dialogs gained two sliders —
+  **Padding** (0-16px) and **Text size** (60-200%) — saved into the widget's config alongside the
+  existing custom text color. Both ride CSS custom properties (`--widget-pad`,
+  `--widget-font-scale`) applied to the widget element, the same mechanism the color option already
+  used, so all 20 widget types pick them up without any renderer knowing they exist. Sliders preview
+  live on the dashboard behind the Edit dialog and revert if you cancel. A widget left on the
+  defaults stores neither key, so it keeps tracking the baseline.
+- **All-time daily high/low on the Air Quality widget**, matching the outdoor/indoor/water
+  temperature tiles. `hiLowHtml()` took a `unit` argument it never used; it now takes an optional
+  formatter instead, defaulting to the temperature treatment the temperature tiles share, so AQI can
+  render whole-number extremes with no unit conversion and no degree sign.
+
+### Fixed
+- **Forecast widgets silently dropped periods they were configured to show.** Both the daily and
+  hourly renderers capped the list a second time by measured width — one item per 72px (daily) or
+  64px (hourly) — so a widget set to 7 days rendered 5 on a tablet-sized dashboard with no
+  indication the rest existed. The cap is gone; every configured period is now rendered and the
+  contents scale to fit instead, sized from the item count via container-query units so they reflow
+  on resize with no measurement. The daily widget also collapses to one entry per calendar day,
+  which matters when two forecast sources aggregate into multiple daytime buckets for one day.
+- **All-Time Records listed wind direction**, whose all-time min/max converge on 0° and 359° and
+  say nothing. `/api/weather/records` now filters it out. The rows stay in the database and are
+  still written — they are just not served.
+
+### Changed
+- **Tighter widget padding and larger forecast type.** Widget padding drops from 8px to 4px.
+  `.widget-body` is the container-query context that every value inside a widget scales against, so
+  the reclaimed space goes straight into larger readings on the outdoor, indoor, air quality,
+  feels-like, water temperature and date/time tiles. Forecast strips also scale considerably larger
+  and spread over the widget's full height: the day/hour label, condition icon, temperature and
+  precipitation chance all size off the same terms, so they grow and shrink together and the strip
+  keeps its proportions at any widget size and period count.
+- **Forecast temperatures are always whole degrees**, regardless of the **Display → Show tenths**
+  setting added in 0.7.0 — that entry listed forecasts among the places tenths applied, and this
+  narrows it. A forecast is an estimate, so a tenths digit implies a precision the source does not
+  have. Live sensor readings, daily hi/lo, the records table and the history chart are unaffected.
+- **New forecast widgets default to 7 days** instead of 5.
+
 ## [0.7.0] - 2026-07-28
 
 ### Added

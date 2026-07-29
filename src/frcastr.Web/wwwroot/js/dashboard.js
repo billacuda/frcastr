@@ -176,6 +176,11 @@
         setInterval(tickClocks, 1000);
 
         window.addEventListener('tempUnitChanged', function () { renderAll(); });
+
+        // The density sliders preview live on the widget being edited, so closing the modal without
+        // saving has to put the saved config back.
+        var editModalEl = document.getElementById('editWidgetModal');
+        if (editModalEl) editModalEl.addEventListener('hidden.bs.modal', function () { renderAll(); });
     }
 
     // ── Widget shell HTML ─────────────────────────────────────────────────────
@@ -185,12 +190,14 @@
             ? '<button class="widget-action-btn" title="Edit widget" onclick="openEditWidgetModal(' + w.id + ')">&#x270F;</button>' +
               '<button class="widget-action-btn" title="Remove widget" onclick="confirmRemoveWidget(' + w.id + ')">&#x2715;</button>'
             : '';
+        // Titlebar and body padding live in site.css so they can be driven per widget by
+        // --widget-pad; see applyWidgetDensity().
         return '<div class="widget-inner h-100 d-flex flex-column" data-widget-id="' + w.id + '" data-widget-type="' + w.type + '">' +
-            '<div class="widget-titlebar d-flex align-items-center px-2 py-1">' +
+            '<div class="widget-titlebar d-flex align-items-center">' +
             '<span class="widget-title small fw-semibold text-body-secondary flex-grow-1 text-truncate">' + escHtml(w.title) + '</span>' +
             btnHtml +
             '</div>' +
-            '<div class="widget-body flex-grow-1 d-flex flex-column px-2 pb-2 overflow-hidden" data-widget-body></div>' +
+            '<div class="widget-body flex-grow-1 d-flex flex-column overflow-hidden" data-widget-body></div>' +
             '</div>';
     }
 
@@ -272,6 +279,7 @@
         var def   = allDefs.find(function (d) { return d.id === wId; });
         var conf  = safeJson(def && def.config);
         applyWidgetColor(el, conf.color);
+        applyWidgetDensity(el, conf);
         var body  = el.querySelector('[data-widget-body]');
         if (!body || !window.WeatherWidgets) return;
         WeatherWidgets.render(wType, body, conf, latestData);
@@ -286,6 +294,22 @@
             el.style.removeProperty('--widget-color');
             el.classList.remove('has-widget-color');
         }
+    }
+
+    // Per-widget density: padding and text scale ride CSS variables the same way --widget-color
+    // does, so all 20 widget types inherit them without any renderer knowing they exist. Clearing
+    // the property rather than writing a default lets the site.css baseline win, so widgets with no
+    // override keep tracking it.
+    function applyWidgetDensity(el, conf) {
+        if (!el) return;
+        conf = conf || {};
+        var pad = Number(conf.pad);
+        if (conf.pad != null && isFinite(pad)) el.style.setProperty('--widget-pad', pad + 'px');
+        else el.style.removeProperty('--widget-pad');
+
+        var scale = Number(conf.fontScale);
+        if (isFinite(scale) && scale > 0) el.style.setProperty('--widget-font-scale', scale);
+        else el.style.removeProperty('--widget-font-scale');
     }
 
     // ── Stale badges ──────────────────────────────────────────────────────────
@@ -549,7 +573,7 @@
             var el = document.getElementById(prefix + 'SimpleForecast');
             if (el) el.style.display = '';
             var pEl = document.getElementById(prefix + 'Periods');
-            if (pEl) pEl.value = conf.periods || (type === 18 ? 12 : 5);
+            if (pEl) pEl.value = conf.periods || (type === 18 ? 12 : 7);
         } else if (SIMPLE_WATER_TYPES.indexOf(type) >= 0) {
             var el = document.getElementById(prefix + 'SimpleWater');
             if (el) el.style.display = '';
@@ -680,6 +704,58 @@
         return conf;
     }
 
+    // ── Per-widget density controls ───────────────────────────────────────────
+    // Must match the baseline in site.css: a widget sitting on the defaults stores neither key.
+
+    var DEFAULT_PAD = 4, DEFAULT_FONT_PCT = 100;
+
+    function setDensityControls(prefix, conf) {
+        conf = conf || {};
+        var padEl  = document.getElementById(prefix + 'Pad');
+        var fontEl = document.getElementById(prefix + 'FontScale');
+        if (padEl)  padEl.value  = (conf.pad != null && isFinite(Number(conf.pad))) ? Number(conf.pad) : DEFAULT_PAD;
+        if (fontEl) fontEl.value = (conf.fontScale > 0) ? Math.round(Number(conf.fontScale) * 100) : DEFAULT_FONT_PCT;
+        updateDensityLabels(prefix);
+    }
+
+    function readDensityControls(prefix) {
+        var padEl  = document.getElementById(prefix + 'Pad');
+        var fontEl = document.getElementById(prefix + 'FontScale');
+        return {
+            pad:       padEl  ? parseInt(padEl.value, 10)  : DEFAULT_PAD,
+            fontPct:   fontEl ? parseInt(fontEl.value, 10) : DEFAULT_FONT_PCT
+        };
+    }
+
+    function updateDensityLabels(prefix) {
+        var d       = readDensityControls(prefix);
+        var padVal  = document.getElementById(prefix + 'PadVal');
+        var fontVal = document.getElementById(prefix + 'FontScaleVal');
+        if (padVal)  padVal.textContent  = d.pad + 'px';
+        if (fontVal) fontVal.textContent = d.fontPct + '%';
+    }
+
+    // Merge (or strip) the density fields. Values equal to the defaults are deleted so an untouched
+    // widget keeps a clean config and keeps tracking any future change to the baseline.
+    function applyDensityToConfig(prefix, conf) {
+        var d = readDensityControls(prefix);
+        conf = conf || {};
+        if (isFinite(d.pad) && d.pad !== DEFAULT_PAD) conf.pad = d.pad; else delete conf.pad;
+        if (isFinite(d.fontPct) && d.fontPct !== DEFAULT_FONT_PCT) conf.fontScale = d.fontPct / 100;
+        else delete conf.fontScale;
+        return conf;
+    }
+
+    window.onDensityInput = function (prefix) {
+        updateDensityLabels(prefix);
+        // Preview live on the widget being edited. The hidden.bs.modal handler below re-renders
+        // from the saved config, so cancelling reverts.
+        if (prefix !== 'ew') return;
+        var idEl = document.getElementById('ewId');
+        var el   = idEl && document.querySelector('[data-widget-id="' + idEl.value + '"]');
+        if (el) applyWidgetDensity(el, applyDensityToConfig('ew', {}));
+    };
+
     window.openEditWidgetModal = async function (id) {
         var def = allDefs.find(function (d) { return d.id === id; });
         if (!def) return;
@@ -700,6 +776,7 @@
         applyMode('ew', true);
         showSimpleSection('ew', def.type, conf);
         setColorControl('ew', conf.color);
+        setDensityControls('ew', conf);
 
         new bootstrap.Modal('#editWidgetModal').show();
     };
@@ -725,6 +802,7 @@
         }
 
         parsed = applyColorToConfig('ew', parsed);
+        parsed = applyDensityToConfig('ew', parsed);
 
         var r = await fetch('/api/dashboard/widgets/' + id + '/config', {
             method:  'PATCH',
@@ -747,6 +825,7 @@
         applyMode('aw', true);
         showSimpleSection('aw', 1, {});
         setColorControl('aw', null);
+        setDensityControls('aw', {});
         new bootstrap.Modal('#addWidgetModal').show();
     };
 
@@ -766,6 +845,7 @@
         }
 
         configObj = applyColorToConfig('aw', configObj);
+        configObj = applyDensityToConfig('aw', configObj);
 
         var body = {
             type:          type,
