@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.6.3](CHANGELOG.md)**
+## **Current version [0.7.0](CHANGELOG.md)**
 
 ## Stack
 

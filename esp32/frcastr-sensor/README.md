@@ -18,7 +18,8 @@ frcastr registers them automatically.
 
 Only the fields listed in the source's `fieldMapping` are stored; anything else is ignored, so you
 can add fields to the payload without touching the server. `temperature` is °C and `humidity` is
-relative humidity in percent.
+relative humidity in percent. DS18B20 is temperature-only, so its payload omits `humidity` entirely
+rather than sending a bogus value.
 
 ## Wiring
 
@@ -27,6 +28,11 @@ Set `SHT3X_ADDRESS` to `0x45` if the ADDR pin is tied high.
 
 **DHT22** — data → GPIO 4 with a 10 kΩ pull-up to 3V3. Comment out `SENSOR_SHT3X` and uncomment
 `SENSOR_DHT22` in `config.h`.
+
+**DS18B20** — data → GPIO 4 with a 4.7 kΩ pull-up between data and 3V3 (required — the bus won't
+work without it). `VDD` → 3V3, `GND` → GND. Comment out `SENSOR_SHT3X` and uncomment
+`SENSOR_DS18B20` in `config.h`. Multiple DS18B20s can share the same bus/pin, but this firmware
+only reads the first one it finds (`getTempCByIndex(0)`).
 
 ## Build and flash
 

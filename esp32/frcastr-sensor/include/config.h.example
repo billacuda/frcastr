@@ -26,6 +26,7 @@
 // Pick exactly one.
 #define SENSOR_SHT3X
 // #define SENSOR_DHT22
+// #define SENSOR_DS18B20
 
 #ifdef SENSOR_SHT3X
   #define SHT3X_ADDRESS      0x44    // 0x45 when ADDR is tied high
@@ -35,6 +36,10 @@
 
 #ifdef SENSOR_DHT22
   #define DHT_PIN            4
+#endif
+
+#ifdef SENSOR_DS18B20
+  #define DS18B20_PIN        4
 #endif
 
 // ── Timing ───────────────────────────────────────────────────────────────────

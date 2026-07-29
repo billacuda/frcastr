@@ -79,6 +79,10 @@
                                 <option value="C" selected="@(Model.Get("Display.TemperatureUnit", "C") == "C" ? "selected" : null)">Celsius (°C)</option>
                                 <option value="F" selected="@(Model.Get("Display.TemperatureUnit") == "F" ? "selected" : null)">Fahrenheit (°F)</option>
                             </select></div>
+                        <div class="col-md-6 d-flex align-items-end"><div class="form-check form-switch ms-2">
+                            <input class="form-check-input" type="checkbox" id="temperatureDecimals" data-setting-key="Display.TemperatureDecimals" @(Model.Get("Display.TemperatureDecimals") == "true" ? "checked" : "") />
+                            <label class="form-check-label" for="temperatureDecimals">Show tenths (e.g. 72.4°)</label>
+                        </div></div>
                         <div class="col-md-6"><label class="form-label">Wind Speed Unit</label>
                             <select class="form-select" data-setting-key="Display.WindUnit">
                                 <option value="kmh"   selected="@(Model.Get("Display.WindUnit", "kmh") == "kmh"   ? "selected" : null)">km/h</option>

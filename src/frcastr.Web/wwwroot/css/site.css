@@ -84,6 +84,9 @@ body {
 .widget-body .metric-sub-unit {
     font-size: 0.7em;
 }
+.temp-tenths {
+    font-size: 0.7em;
+}
 .widget-body .metric-hl {
     font-size: clamp(0.5rem, min(14cqh, 10cqw), 1.5rem);
     line-height: 1.2;

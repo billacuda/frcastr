@@ -14,6 +14,7 @@ public class IndexModel(ISettingsService settings) : PageModel
     public string WindUnit { get; private set; } = "kmh";
     public string PressureUnit { get; private set; } = "hPa";
     public string RainUnit { get; private set; } = "mm";
+    public bool TemperatureDecimals { get; private set; }
     public string StationLat { get; private set; } = "";
     public string StationLon { get; private set; } = "";
 
@@ -25,6 +26,7 @@ public class IndexModel(ISettingsService settings) : PageModel
         WindUnit = await settings.GetAsync("Display.WindUnit", ct) ?? "kmh";
         PressureUnit = await settings.GetAsync("Display.PressureUnit", ct) ?? "hPa";
         RainUnit = await settings.GetAsync("Display.RainUnit", ct) ?? "mm";
+        TemperatureDecimals = await settings.GetBoolAsync("Display.TemperatureDecimals", false, ct);
         StationLat = await settings.GetAsync("Station.Latitude", ct) ?? "";
         StationLon = await settings.GetAsync("Station.Longitude", ct) ?? "";
     }

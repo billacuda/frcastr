@@ -20,8 +20,13 @@
 #elif defined(SENSOR_DHT22)
   #include <DHT.h>
   static DHT dht(DHT_PIN, DHT22);
+#elif defined(SENSOR_DS18B20)
+  #include <OneWire.h>
+  #include <DallasTemperature.h>
+  static OneWire oneWire(DS18B20_PIN);
+  static DallasTemperature ds18b20(&oneWire);
 #else
-  #error "Define SENSOR_SHT3X or SENSOR_DHT22 in config.h"
+  #error "Define SENSOR_SHT3X, SENSOR_DHT22, or SENSOR_DS18B20 in config.h"
 #endif
 
 static WiFiClient wifiClient;
@@ -100,15 +105,21 @@ static void ensureMqtt() {
 // ── Sensor ───────────────────────────────────────────────────────────────────
 
 static bool readSensor(float& temperatureC, float& humidityPct) {
+    humidityPct = NAN;
 #if defined(SENSOR_SHT3X)
     temperatureC = sht31.readTemperature();
     humidityPct  = sht31.readHumidity();
+    return !isnan(temperatureC) && !isnan(humidityPct);
 #elif defined(SENSOR_DHT22)
     temperatureC = dht.readTemperature();
     humidityPct  = dht.readHumidity();
-#endif
-    // Both libraries signal a failed read with NaN.
     return !isnan(temperatureC) && !isnan(humidityPct);
+#elif defined(SENSOR_DS18B20)
+    // DS18B20 is temperature-only; humidityPct stays NaN and is left out of the payload.
+    ds18b20.requestTemperatures();
+    temperatureC = ds18b20.getTempCByIndex(0);
+    return temperatureC != DEVICE_DISCONNECTED_C;
+#endif
 }
 
 static void publishReading() {
@@ -120,7 +131,9 @@ static void publishReading() {
 
     JsonDocument doc;
     doc["temperature"] = round(temperatureC * 100.0f) / 100.0f;
-    doc["humidity"]    = round(humidityPct * 100.0f) / 100.0f;
+    if (!isnan(humidityPct)) {
+        doc["humidity"] = round(humidityPct * 100.0f) / 100.0f;
+    }
     doc["firmware"]    = FIRMWARE_VERSION;
 
     char payload[192];
@@ -150,6 +163,8 @@ void setup() {
     }
 #elif defined(SENSOR_DHT22)
     dht.begin();
+#elif defined(SENSOR_DS18B20)
+    ds18b20.begin();
 #endif
 
     mqtt.setServer(MQTT_HOST, MQTT_PORT);

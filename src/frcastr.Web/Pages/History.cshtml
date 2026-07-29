@@ -91,6 +91,7 @@ window.frcastrConfig = window.frcastrConfig || {};
 window.frcastrConfig.windUnit     = '@Model.WindUnit';
 window.frcastrConfig.pressureUnit = '@Model.PressureUnit';
 window.frcastrConfig.rainUnit     = '@Model.RainUnit';
+window.frcastrConfig.temperatureDecimals = @(Model.TemperatureDecimals ? "true" : "false");
 </script>
 <script src="~/js/temp-unit.js" asp-append-version="true"></script>
 <script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
@@ -184,9 +185,10 @@ function toIn(mm)     { return mm * 0.03937; }
 function channelConv(ch) {
     const cfg = window.frcastrConfig || {};
     const tu  = window.getTempUnit ? window.getTempUnit() : 'C';
+    const tDec = cfg.temperatureDecimals ? 1 : 0;
     if (/^(temperature|dewpoint|feelslike)/.test(ch))
-        return tu === 'F' ? { fn: toF,     unit: '°F', dec: 1 }
-                          : { fn: null,    unit: '°C', dec: 1 };
+        return tu === 'F' ? { fn: toF,     unit: '°F', dec: tDec }
+                          : { fn: null,    unit: '°C', dec: tDec };
     if (/^wind\.(speed|gust)/.test(ch)) {
         const wu = cfg.windUnit || 'kmh';
         if (wu === 'mph')   return { fn: toMph,          unit: 'mph',  dec: 1 };
@@ -385,6 +387,18 @@ function deviceOf(key, devices) {
     return Object.values(devices || {}).find(d => d.deviceKey === deviceKey) || null;
 }
 
+// Records come back in their canonical stored unit (°C, km/h, hPa, mm, ...); convert to the
+// display unit the same way the Period Summary chart does. Temperature channels additionally
+// get the smaller-tenths treatment via formatTemp().
+function recordCell(channelName, rawValue) {
+    if (rawValue == null) return '–';
+    if (/^(temperature|dewpoint|feelslike)/.test(channelName)) {
+        return window.formatTemp(rawValue) + '&deg;' + window.getTempUnit();
+    }
+    const c = channelConv(channelName);
+    return convertPoint(channelName, rawValue) + ' ' + c.unit;
+}
+
 async function loadRecords() {
     const res = await fetch('/api/weather/records');
     if (!res.ok) return;
@@ -397,9 +411,9 @@ async function loadRecords() {
         <tr>
             <td>${escHtml(labelFor(r.channelKey || r.channelName))}</td>
             <td class="small text-body-secondary">${r.deviceName ? escHtml(r.deviceName) : '–'}</td>
-            <td>${r.allTimeMax}</td>
+            <td>${recordCell(r.channelName, r.allTimeMax)}</td>
             <td>${new Date(r.allTimeMaxAt).toLocaleDateString()}</td>
-            <td>${r.allTimeMin}</td>
+            <td>${recordCell(r.channelName, r.allTimeMin)}</td>
             <td>${new Date(r.allTimeMinAt).toLocaleDateString()}</td>
         </tr>`).join('');
     document.getElementById('recordsTable').classList.remove('d-none');

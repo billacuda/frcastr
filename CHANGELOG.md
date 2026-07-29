@@ -2,7 +2,28 @@
 
 All notable changes to frcastr are documented here.
 
-## [0.6.3] - 2026-07-27
+## [0.7.0] - 2026-07-28
+
+### Added
+- **DS18B20 sensor support** in the ESP32 reference firmware (`esp32/frcastr-sensor/`): a new
+  `SENSOR_DS18B20` option alongside the existing SHT3x and DHT22 choices, wired over 1-Wire via the
+  `OneWire`/`DallasTemperature` libraries. DS18B20 is temperature-only, so its state payload omits
+  `humidity` entirely rather than publishing a bogus value — the server-side field mapping already
+  treats missing fields as absent, so no data source changes are needed.
+- **Tenths-precision temperature display**: a new **Display → Show tenths** setting
+  (`Display.TemperatureDecimals`) switches every temperature reading in the app — dashboard tiles
+  (outdoor/indoor, feels-like, water temp, dew point, daily hi/lo, forecast), the All-Time Records
+  table, and the Period Summary chart's plotted resolution — between whole-degree and one-decimal
+  display. The tenths digit renders in smaller text (`72.4°`), matching the existing convention used
+  for secondary unit labels inside widgets. Off by default, so existing dashboards are unaffected
+  until turned on.
+
+### Fixed
+- **All-Time Records ignored every display-unit setting**: the table printed the canonical stored
+  value for every channel — °C, km/h, hPa, mm — with no conversion and no unit suffix, regardless of
+  the navbar C/F toggle or the wind/pressure/rain units chosen in Settings. It's the one place in the
+  app that didn't already do this; the Period Summary chart converts every point through the same
+  `channelConv`/`convertPoint` helpers, which the Records table now reuses.
 
 ### Changed
 - **Build against .NET 10.0.10** — bumped the pinned `Microsoft.EntityFrameworkCore.*`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.AspNetCore.Identity.UI` and `Microsoft.AspNetCore.OpenApi` package references from 10.0.9 to 10.0.10, and the `dotnet-ef` local tool in `.config/dotnet-tools.json` to match. The direct `Microsoft.OpenApi` 2.11.0 pin from 0.6.2 stays and is still doing work: `Microsoft.AspNetCore.OpenApi 10.0.10` still declares the vulnerable `Microsoft.OpenApi 2.0.0` transitively.

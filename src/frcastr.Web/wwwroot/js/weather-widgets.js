@@ -53,7 +53,6 @@ window.WeatherWidgets = (function () {
     function unit(r) { return (r && r.unit) || ''; }
     function ts(r) { return (r && r.timestamp) || null; }
 
-    function toF(c) { return c * 9 / 5 + 32; }
     function toInHg(hpa) { return hpa * 0.02953; }
     function toMmHg(hpa) { return hpa * 0.75006; }
     function toMph(kmh) { return kmh * 0.62137; }
@@ -299,10 +298,8 @@ window.WeatherWidgets = (function () {
     function hiLowHtml(data, channelKey, unit) {
         var ex = data && data.dailyExtremes && data.dailyExtremes[channelKey];
         if (!ex || (ex.max == null && ex.min == null)) return null;
-        var hi = ex.max != null ? (unit === 'F' ? toF(ex.max) : ex.max) : null;
-        var lo = ex.min != null ? (unit === 'F' ? toF(ex.min) : ex.min) : null;
-        return (hi != null ? '<span>H&thinsp;' + fmt(hi, 0) + '&deg;</span>' : '') +
-               (lo != null ? '<span>L&thinsp;' + fmt(lo, 0) + '&deg;</span>' : '') || null;
+        return (ex.max != null ? '<span>H&thinsp;' + window.formatTemp(ex.max) + '&deg;</span>' : '') +
+               (ex.min != null ? '<span>L&thinsp;' + window.formatTemp(ex.min) + '&deg;</span>' : '') || null;
     }
 
     // ── Renderers ─────────────────────────────────────────────────────────────
@@ -366,7 +363,6 @@ window.WeatherWidgets = (function () {
         var r     = reading(data, ch);
         var v     = val(r);
         var u     = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
-        var dv    = v == null ? null : (u === 'F' ? toF(v) : v);
         var trend = (data && data.current && data.current.trends && data.current.trends[ch]) || null;
 
         var secondary = [];
@@ -375,17 +371,16 @@ window.WeatherWidgets = (function () {
                 ? reading(data, config.humidityChannel)
                 : companionReading(data, ch, tempCh, humCh);
             var hv  = val(hr);
-            var dpD = null;
+            var dpV = null;
             if (dewCh && config.showDewpoint !== false) {
-                var dpV = val(companionReading(data, ch, tempCh, dewCh));
-                dpD = dpV != null ? (u === 'F' ? toF(dpV) : dpV) : null;
+                dpV = val(companionReading(data, ch, tempCh, dewCh));
             }
             if (hv != null) {
                 secondary.push(
                     '<div class="metric-sub d-flex align-items-baseline gap-1">' +
                     '<span class="fw-semibold">' + fmt(hv, 0) + '</span>' +
                     '<span class="text-body-secondary metric-sub-unit">%</span>' +
-                    (dpD != null ? '<span class="text-body-secondary metric-sub-unit ms-2">dp&thinsp;' + fmt(dpD, 0) + '&deg;</span>' : '') +
+                    (dpV != null ? '<span class="text-body-secondary metric-sub-unit ms-2">dp&thinsp;' + window.formatTemp(dpV) + '&deg;</span>' : '') +
                     '</div>');
             }
         }
@@ -393,7 +388,7 @@ window.WeatherWidgets = (function () {
         var hiLow = hiLowHtml(data, ch, u);
 
         el.innerHTML = buildMetric({
-            value:     fmt(dv, 0),
+            value:     window.formatTemp(v),
             unit:      '&deg;' + u,
             trend:     trend ? trendArrow(trend.direction) : '',
             secondary: secondary,
@@ -422,10 +417,9 @@ window.WeatherWidgets = (function () {
         // with that room's dew point rather than the station's.
         var dpR    = showDp ? companionReading(data, ch, humCh, dewCh) : null;
         var dpV    = val(dpR);
-        var dpD    = dpV != null ? (tu === 'F' ? toF(dpV) : dpV) : null;
 
-        var secondary = dpD != null
-            ? ['<div class="metric-sub text-body-secondary text-truncate">Dew point: ' + fmt(dpD, 0) + '&deg;' + tu + '</div>']
+        var secondary = dpV != null
+            ? ['<div class="metric-sub text-body-secondary text-truncate">Dew point: ' + window.formatTemp(dpV) + '&deg;' + tu + '</div>']
             : [];
 
         el.innerHTML = buildMetric({
@@ -523,7 +517,7 @@ window.WeatherWidgets = (function () {
             var day  = d.toLocaleDateString(undefined, { weekday: 'short' });
             var icon = conditionIcon(p.condition);
             var temp = p.temperature != null
-                ? fmt(u === 'F' ? toF(p.temperature) : p.temperature, 0) + '&deg;' + u
+                ? window.formatTemp(p.temperature) + '&deg;' + u
                 : '&ndash;';
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
             html +=
@@ -658,9 +652,8 @@ window.WeatherWidgets = (function () {
         var r  = reading(data, config.channel || 'feelslike.outdoor');
         var v  = val(r);
         var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
-        var dv = v == null ? null : (u === 'F' ? toF(v) : v);
         el.innerHTML = buildMetric({
-            value:  fmt(dv, 0),
+            value:  window.formatTemp(v),
             unit:   '&deg;' + u,
             footer: tsHtml(ts(r))
         });
@@ -935,7 +928,7 @@ window.WeatherWidgets = (function () {
                 : pad(d.getHours()) + ':00';
             var icon = conditionIcon(p.condition);
             var temp = p.temperature != null
-                ? fmt(u === 'F' ? toF(p.temperature) : p.temperature, 0) + '&deg;' + u
+                ? window.formatTemp(p.temperature) + '&deg;' + u
                 : '&ndash;';
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
             html +=
@@ -1004,7 +997,6 @@ window.WeatherWidgets = (function () {
         var r  = reading(data, ch);
         var v  = val(r);
         var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
-        var dv = v == null ? null : (u === 'F' ? toF(v) : v);
         var hl = hiLowHtml(data, ch, u);
 
         // The value sits over the scene rather than inside buildMetric, whose flex column would
@@ -1016,7 +1008,7 @@ window.WeatherWidgets = (function () {
             '<div class="water-content d-flex flex-column h-100" style="min-height:0">' +
             '<div class="d-flex flex-column justify-content-center flex-grow-1 align-items-center" style="min-height:0">' +
             '<div class="metric-primary d-flex align-items-baseline gap-1" style="line-height:1">' +
-            '<span class="fw-bold metric-value">' + fmt(dv, 0) + '</span>' +
+            '<span class="fw-bold metric-value">' + window.formatTemp(v) + '</span>' +
             '<span class="metric-unit">&deg;' + u + '</span>' +
             '</div>' +
             '</div>' +
