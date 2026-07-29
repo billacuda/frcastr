@@ -6,6 +6,7 @@ obj/
 *.userosscache
 *.sln.docstates
 
+
 # Visual Studio
 .vs/
 *.rsuser
@@ -17,6 +18,7 @@ obj/
 # Published output
 publish/
 out/
+temp/
 
 # Generated / secrets
 setup-generated.json
