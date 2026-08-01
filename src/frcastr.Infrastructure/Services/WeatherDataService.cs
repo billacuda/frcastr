@@ -271,6 +271,171 @@ public class WeatherDataService(
         return new HistoryResult(rawPoints, aggPoints, devices);
     }
 
+    // ── Monthly statistics ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One calendar day of a channel, whichever tier still holds it. Sum and Count carry the mean
+    /// rather than the mean itself so days of wildly different sample counts can be pooled into a
+    /// month without a short day weighing as much as a full one.
+    /// </summary>
+    private sealed record DayBucket(int Year, int Month, int Day,
+        decimal Min, decimal Max, decimal Sum, int Count);
+
+    public async Task<MonthlyStatsResult> GetMonthlyStatsAsync(
+        string channelKey, CancellationToken ct = default)
+    {
+        var (channelName, deviceKey) = ChannelKey.Split(channelKey);
+
+        int? deviceId = null;
+        if (deviceKey is not null)
+        {
+            deviceId = await dbContext.Devices
+                .Where(d => d.DeviceId == deviceKey)
+                .Select(d => (int?)d.Id)
+                .FirstOrDefaultAsync(ct);
+
+            // A key naming a device that no longer exists must return nothing rather than quietly
+            // widening to every device reporting that channel.
+            if (deviceId is null) return new MonthlyStatsResult(channelKey, "", [], []);
+        }
+
+        // Same tier routing as GetHistoryAsync: a day lives in exactly one tier once the rollups
+        // have run, and the cutoffs keep a day that straddles one from being counted twice.
+        var rawRetention = await settings.GetIntAsync("Weather.RawRetentionDays", 30, ct);
+        var hourlyRetention = await settings.GetIntAsync("Weather.HourlyRetentionDays", 365, ct);
+        var now = DateTime.UtcNow;
+        var rawCutoff = now.AddDays(-rawRetention);
+        var hourlyCutoff = now.AddDays(-hourlyRetention);
+
+        // Days are the station's days, not UTC's. Grouping in SQL is what keeps this to one row
+        // per day rather than dragging a month of per-minute readings into memory, and SQL cannot
+        // do a real time zone conversion — so the timestamps are shifted by the station's current
+        // offset before the calendar fields are read off them. That is exact except across a DST
+        // boundary, where an hour lands on the neighboring day: immaterial to a monthly mean, and
+        // far better than a UTC calendar putting a station west of Greenwich into next month at
+        // dinner time.
+        var tzId = await settings.GetAsync("Station.TimeZone", ct) ?? "UTC";
+        TimeZoneInfo tz;
+        try { tz = TimeZoneInfo.FindSystemTimeZoneById(tzId); }
+        catch (Exception) { tz = TimeZoneInfo.Utc; }
+        var offsetMinutes = tz.GetUtcOffset(DateTime.UtcNow).TotalMinutes;
+
+        var rawQuery = dbContext.WeatherReadings
+            .Where(r => r.ChannelName == channelName && r.Timestamp >= rawCutoff);
+        if (deviceId is not null) rawQuery = rawQuery.Where(r => r.DeviceId == deviceId);
+
+        var rawDays = (await rawQuery
+            .Select(r => new { Local = r.Timestamp.AddMinutes(offsetMinutes), r.Value })
+            .GroupBy(r => new { r.Local.Year, r.Local.Month, r.Local.Day })
+            .Select(g => new
+            {
+                g.Key,
+                Min = g.Min(r => r.Value),
+                Max = g.Max(r => r.Value),
+                Sum = g.Sum(r => r.Value),
+                Count = g.Count()
+            })
+            .ToListAsync(ct))
+            .Select(g => new DayBucket(g.Key.Year, g.Key.Month, g.Key.Day, g.Min, g.Max, g.Sum, g.Count))
+            .ToList();
+
+        // shiftMinutes is 0 for the daily tier: a daily aggregate already *is* one whole UTC day,
+        // so shifting it would not sharpen the boundary, only move the entire day onto its
+        // neighbour. Hourly buckets are fine-grained enough for the shift to do real work.
+        async Task<List<DayBucket>> AggregateDaysAsync(
+            AggregationGranularity granularity, DateTime? from, DateTime? to, double shiftMinutes)
+        {
+            var q = dbContext.WeatherReadingAggregates
+                .Where(a => a.Granularity == granularity && a.ChannelName == channelName);
+            if (from is not null) q = q.Where(a => a.PeriodStart >= from);
+            if (to is not null) q = q.Where(a => a.PeriodStart < to);
+            if (deviceId is not null) q = q.Where(a => a.DeviceId == deviceId);
+
+            // Weighted by Count the same way the hourly → daily rollup weights its averages, so a
+            // sparse hour cannot drag a day's mean around.
+            return (await q
+                .Select(a => new
+                {
+                    Local = a.PeriodStart.AddMinutes(shiftMinutes),
+                    a.Min, a.Max, a.Avg, a.Count
+                })
+                .GroupBy(a => new { a.Local.Year, a.Local.Month, a.Local.Day })
+                .Select(g => new
+                {
+                    g.Key,
+                    Min = g.Min(a => a.Min),
+                    Max = g.Max(a => a.Max),
+                    WeightedSum = g.Sum(a => a.Avg * a.Count),
+                    TotalCount = g.Sum(a => a.Count)
+                })
+                .ToListAsync(ct))
+                .Select(g => new DayBucket(g.Key.Year, g.Key.Month, g.Key.Day,
+                    g.Min, g.Max, g.WeightedSum, g.TotalCount))
+                .ToList();
+        }
+
+        var hourlyDays = await AggregateDaysAsync(AggregationGranularity.Hourly, hourlyCutoff, rawCutoff, offsetMinutes);
+        var dailyDays  = await AggregateDaysAsync(AggregationGranularity.Daily, null, hourlyCutoff, 0);
+
+        var days = new Dictionary<(int Year, int Month, int Day), DayBucket>();
+        foreach (var b in rawDays.Concat(hourlyDays).Concat(dailyDays))
+        {
+            var key = (b.Year, b.Month, b.Day);
+            days[key] = days.TryGetValue(key, out var e)
+                ? e with
+                {
+                    Min = Math.Min(e.Min, b.Min), Max = Math.Max(e.Max, b.Max),
+                    Sum = e.Sum + b.Sum, Count = e.Count + b.Count
+                }
+                : b;
+        }
+
+        if (days.Count == 0) return new MonthlyStatsResult(channelKey, "", [], []);
+
+        var unit = await dbContext.WeatherReadings
+                       .Where(r => r.ChannelName == channelName)
+                       .Select(r => r.Unit).FirstOrDefaultAsync(ct)
+                   ?? await dbContext.WeatherReadingAggregates
+                       .Where(a => a.ChannelName == channelName)
+                       .Select(a => a.Unit).FirstOrDefaultAsync(ct)
+                   ?? "";
+
+        static MonthlyStat ToStat(int month, IReadOnlyList<DayBucket> buckets)
+        {
+            var samples = buckets.Sum(d => (long)d.Count);
+            return new MonthlyStat(
+                Month:   month,
+                AvgHigh: Math.Round(buckets.Average(d => d.Max), 2),
+                // The mean of every reading, not the mean of the daily means: an hour that logged
+                // twice as often should pull twice as hard. A day with no sample count behind it
+                // falls back to the midpoint of its own range rather than dropping out.
+                Avg:     Math.Round(samples > 0
+                             ? buckets.Sum(d => d.Sum) / samples
+                             : buckets.Average(d => (d.Min + d.Max) / 2m), 2),
+                AvgLow:  Math.Round(buckets.Average(d => d.Min), 2),
+                Days:    buckets.Count);
+        }
+
+        var years = days.Values
+            .GroupBy(d => d.Year)
+            .OrderByDescending(g => g.Key)
+            .Select(g => new MonthlyYearStats(
+                g.Key,
+                g.GroupBy(d => d.Month)
+                 .OrderBy(m => m.Key)
+                 .Select(m => ToStat(m.Key, m.ToList()))
+                 .ToList()))
+            .ToList();
+
+        var allTime = days.Values
+            .GroupBy(d => d.Month)
+            .OrderBy(g => g.Key)
+            .Select(g => ToStat(g.Key, g.ToList()))
+            .ToList();
+
+        return new MonthlyStatsResult(channelKey, unit, years, allTime);
+    }
+
     // ── Channel records ───────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<WeatherChannelRecord>> GetChannelRecordsAsync(

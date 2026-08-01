@@ -2,6 +2,56 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.9.0] - 2026-07-31
+
+### Added
+- **Monthly Data**, a new History tab between Period Summary and All-Time Records. All twelve
+  months across the top, with that month's **avg high**, **avg**, **avg low** and the number of
+  **days** the averages stand on beneath each one. A year selector switches between the years on
+  record and an **All time** column that pools each month across every year — recomputed from the
+  underlying daily figures rather than averaged from the per-year averages, so a month with three
+  days in one year cannot outweigh a full month in another. A month that recorded nothing shows
+  `–`; one that has not happened yet shows `n/a`; one still being lived in averages the days it
+  has. Any logged channel can be picked, not just temperature.
+  - Served by `/api/weather/monthly`, which returns every year in a single response, so switching
+    years never goes back to the server. Days are bucketed in SQL — one row per day rather than a
+    month of per-minute readings pulled into memory — and read off the station's local calendar,
+    not UTC's, so a station west of Greenwich is not filed into next month at dinner time.
+    Averages route through the same raw/hourly/daily tiers the History chart uses, so a month
+    reads the same whichever tier still holds it.
+- **The daily forecast shows a high and a low** beneath each condition icon. The low was always in
+  the data — it lives in the overnight period the widget's daytime filter throws away — so the
+  extremes are now taken across every period of the day. The pair shares one degree sign and drops
+  the unit letter to fit; a day down to its last period has no spread left and still renders as the
+  single figure it is.
+
+### Changed
+- **Dew point reads in whole degrees** on the humidity and temperature tiles. It is a derived
+  companion to the reading the tile is actually about, and a tenths digit on it competed with the
+  value above it.
+- **The History channel list sizes itself to its channels.** It was a fixed 190px with the labels
+  truncated, which cut per-device keys like `temperature.indoor@attic-02` down to
+  `temperature.indo…` — exactly the part that tells two sensors apart. It now grows to the widest
+  channel, up to a ceiling that keeps a pathological label from crowding out the chart.
+
+### Fixed
+- **Chart tooltips named the value but never the moment.** Scatter datasets are `{x, y}` objects
+  with no chart labels behind them, so Chart.js had nothing to put in the tooltip title and left it
+  empty — a point could be read off but not placed in time. Each point now carries its own local
+  date and time, to the minute on every view but a year's, whose points are one per month.
+
+## [0.8.2] - 2026-07-31
+
+### Fixed
+- **The Period Summary chart drew humidity as a staircase.** Sensors report relative humidity to a
+  tenth of a percent and it is logged that way, but `channelConv()` rounded the series to whole
+  percent before plotting, quantizing every point onto an integer step and flattening the real
+  movement between them. Humidity now converts at one decimal, so the curve follows the readings.
+  The chart tooltips and the all-time records table read off the same conversion and pick up the
+  tenths with it; the widget tiles deliberately do not, and keep showing whole percent — a glance
+  surface has no use for a digit that flickers on every poll, the same reasoning that keeps forecast
+  temperatures whole regardless of **Display → Show tenths**.
+
 ## [0.8.1] - 2026-07-31
 
 ### Fixed

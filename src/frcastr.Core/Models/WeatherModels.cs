@@ -48,6 +48,29 @@ public record AggregateDataPoint(
 /// <summary>Identifies a device referenced by history points, for composing channel keys.</summary>
 public record DeviceRef(string DeviceKey, string DeviceName);
 
+/// <summary>
+/// One calendar month of a channel: the mean of that month's daily highs, the mean of its daily
+/// lows, and the mean of every reading in it. A month still being lived in reports the days it
+/// has, so <see cref="Days"/> says how much the averages are standing on.
+/// </summary>
+public record MonthlyStat(int Month, decimal AvgHigh, decimal Avg, decimal AvgLow, int Days);
+
+/// <summary>A single year's months. Only months carrying data are listed.</summary>
+public record MonthlyYearStats(int Year, IReadOnlyList<MonthlyStat> Months);
+
+/// <summary>
+/// Every year is returned in one response rather than one fetch per year: the whole history of a
+/// channel collapses to a few numbers per month, so the year selector switches instantly and the
+/// all-time column is already there. <see cref="AllTime"/> pools each month across every year —
+/// recomputed from the underlying daily figures, not averaged from the per-year averages, so a
+/// month with three days in one year cannot outweigh a full month in another.
+/// </summary>
+public record MonthlyStatsResult(
+    string ChannelKey,
+    string Unit,
+    IReadOnlyList<MonthlyYearStats> Years,
+    IReadOnlyList<MonthlyStat> AllTime);
+
 public record HistoryResult(
     IReadOnlyList<HistoryDataPoint> RawPoints,
     IReadOnlyList<AggregateDataPoint> AggregatePoints,

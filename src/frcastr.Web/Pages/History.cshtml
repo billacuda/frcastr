@@ -10,6 +10,9 @@
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-period">Period Summary</button>
         </li>
         <li class="nav-item">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-monthly">Monthly Data</button>
+        </li>
+        <li class="nav-item">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-records">All-Time Records</button>
         </li>
         <li class="nav-item">
@@ -37,6 +40,35 @@
                 </div>
             </div>
             <div id="historyCharts"></div>
+        </div>
+
+        <!-- Monthly Data -->
+        <div class="tab-pane fade" id="tab-monthly">
+            <div class="row align-items-end g-2 mb-3">
+                <div class="col-auto">
+                    <label class="form-label">Channel</label>
+                    <select id="monthlyChannel" class="form-select"></select>
+                </div>
+                <div class="col-auto">
+                    <label class="form-label">Year</label>
+                    <select id="monthlyYear" class="form-select"></select>
+                </div>
+            </div>
+            <div id="monthlyLoading" class="text-muted">Loading…</div>
+            <div class="table-responsive d-none" id="monthlyWrap">
+                <table class="table table-bordered table-sm text-center align-middle mb-2" id="monthlyTable">
+                    <thead><tr id="monthlyHead"></tr></thead>
+                    <tbody id="monthlyBody"></tbody>
+                </table>
+                <div class="small text-body-secondary">
+                    <strong>Avg high</strong> and <strong>Avg low</strong> are the means of that
+                    month's daily highs and lows; <strong>Avg</strong> is the mean of every reading.
+                    <strong>Days</strong> is how many days of data the column stands on — a month
+                    still running, or one that lost days to a sensor outage, averages what it has.
+                    <span class="fst-italic">n/a</span> marks a month that has not happened yet and
+                    <span class="fst-italic">–</span> one that recorded nothing.
+                </div>
+            </div>
         </div>
 
         <!-- All-Time Records -->
@@ -109,10 +141,11 @@ let channelLabels = {};
 // localStorage, the same store the dashboard uses for layouts. Every read is guarded: a channel
 // that goes away, or hand-edited storage, must not take the page down with it.
 const STORE = {
-    hidden: 'frcastr-history-hidden',
-    colors: 'frcastr-history-colors',
-    view:   'frcastr-history-view',
-    tab:    'frcastr-history-tab'
+    hidden:  'frcastr-history-hidden',
+    colors:  'frcastr-history-colors',
+    view:    'frcastr-history-view',
+    tab:     'frcastr-history-tab',
+    monthly: 'frcastr-history-monthly'
 };
 
 function readStore(key, fallback) {
@@ -207,7 +240,9 @@ function channelConv(ch) {
         if (ru === 'in') return { fn: toIn, unit: 'in', dec: 2 };
         return                  { fn: null, unit: 'mm', dec: 1 };
     }
-    if (/^humidity/.test(ch))    return { fn: null, unit: '%', dec: 0 };
+    // Humidity is logged to a tenth of a percent. Rounding it to whole percent here quantized the
+    // Period Summary series onto integer steps, which drew a staircase instead of a curve.
+    if (/^humidity/.test(ch))    return { fn: null, unit: '%', dec: 1 };
     if (ch === 'wind.direction') return { fn: null, unit: '°', dec: 0 };
     return { fn: null, unit: '', dec: 1 };
 }
@@ -272,8 +307,11 @@ function renderHistoryCharts(data, period) {
     layout.className = 'd-flex gap-3';
     layout.style.cssText = 'min-height:420px;align-items:flex-start';
 
+    // Sized to the widest channel row rather than a fixed 190px, which truncated per-device keys
+    // like "temperature.indoor@@attic-02" to "temperature.indo…". The ceiling keeps a pathological
+    // label from crowding out the chart; anything past it still truncates.
     const sidebar = document.createElement('div');
-    sidebar.style.cssText = 'width:190px;min-width:160px;flex-shrink:0;overflow-y:auto;max-height:420px';
+    sidebar.style.cssText = 'width:max-content;min-width:190px;max-width:340px;flex-shrink:0;overflow-y:auto;max-height:420px';
     sidebar.innerHTML = '<div class="small fw-semibold mb-2 text-body-secondary">Channels</div>';
 
     const chartWrap = document.createElement('div');
@@ -325,6 +363,22 @@ function renderHistoryCharts(data, period) {
                 legend: { display: false },
                 tooltip: {
                     callbacks: {
+                        // Scatter datasets are {x, y} objects with no chart labels behind them, so
+                        // Chart.js had nothing to put in the tooltip title and left it blank: the
+                        // value was there but never when it happened. Stamp each point with its own
+                        // local date and time, down to the minute on everything but a year view,
+                        // whose points are one per month.
+                        title: items => {
+                            if (!items.length) return '';
+                            const d = new Date(items[0].parsed.x);
+                            if (isNaN(d.getTime())) return '';
+                            return timeUnit === 'month'
+                                ? d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+                                : d.toLocaleString(undefined, {
+                                    weekday: 'short', month: 'short', day: 'numeric',
+                                    hour: 'numeric', minute: '2-digit'
+                                  });
+                        },
                         label: ctx => {
                             const u = ctx.dataset.unitLabel || '';
                             return `${ctx.dataset.label}: ${ctx.parsed.y}${u ? ' ' + u : ''}`;
@@ -387,12 +441,34 @@ function deviceOf(key, devices) {
     return Object.values(devices || {}).find(d => d.deviceKey === deviceKey) || null;
 }
 
+// Temperature, dew point and feels-like are all stored in °C and share one display unit, so they
+// convert and format together rather than through channelConv's generic path.
+function isTempChannel(channelName) {
+    return /^(temperature|dewpoint|feelslike)/.test(channelName);
+}
+
+// The display unit for a channel, on its own — for table headers, where repeating the unit in
+// every cell would drown the numbers.
+function unitLabel(channelName) {
+    return isTempChannel(channelName)
+        ? '&deg;' + window.getTempUnit()
+        : channelConv(channelName).unit;
+}
+
+// A value in its display unit, without the unit itself.
+function valueOnly(channelName, rawValue) {
+    if (rawValue == null) return null;
+    return isTempChannel(channelName)
+        ? window.formatTemp(rawValue)
+        : String(convertPoint(channelName, rawValue));
+}
+
 // Records come back in their canonical stored unit (°C, km/h, hPa, mm, ...); convert to the
 // display unit the same way the Period Summary chart does. Temperature channels additionally
 // get the smaller-tenths treatment via formatTemp().
 function recordCell(channelName, rawValue) {
     if (rawValue == null) return '–';
-    if (/^(temperature|dewpoint|feelslike)/.test(channelName)) {
+    if (isTempChannel(channelName)) {
         return window.formatTemp(rawValue) + '&deg;' + window.getTempUnit();
     }
     const c = channelConv(channelName);
@@ -419,6 +495,119 @@ async function loadRecords() {
     document.getElementById('recordsTable').classList.remove('d-none');
 }
 
+// ── Monthly data ─────────────────────────────────────────────────────────────
+// One fetch carries every year, so the year selector switches without going back to the server.
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+let monthlyData = null;
+let monthlyLoaded = false;
+
+async function loadMonthly(channelKey) {
+    const loading = document.getElementById('monthlyLoading');
+    const wrap = document.getElementById('monthlyWrap');
+    loading.textContent = 'Loading…';
+    loading.classList.remove('d-none');
+    wrap.classList.add('d-none');
+
+    let res;
+    try {
+        res = await fetch('/api/weather/monthly' +
+            (channelKey ? '?channel=' + encodeURIComponent(channelKey) : ''));
+    } catch (e) { res = null; }
+
+    if (!res || !res.ok) {
+        loading.textContent = 'Could not load monthly data.';
+        return;
+    }
+
+    monthlyData = await res.json();
+    monthlyLoaded = true;
+
+    const channelSel = document.getElementById('monthlyChannel');
+    // Rebuilt on the first load only: the channel list is the same whichever channel is selected,
+    // and replacing the options mid-selection would fight the user's own choice.
+    if (!channelSel.options.length) {
+        channelSel.innerHTML = (monthlyData.channels || []).map(c =>
+            `<option value="${escHtml(c.key)}">${escHtml(labelFor(c.key))}` +
+            `${c.deviceName ? ' — ' + escHtml(c.deviceName) : ''}</option>`).join('');
+    }
+    if (monthlyData.channelKey) channelSel.value = monthlyData.channelKey;
+
+    if (!monthlyData.channelKey || !(monthlyData.years || []).length) {
+        loading.textContent = 'No monthly data recorded yet.';
+        return;
+    }
+
+    const stored = readStore(STORE.monthly, {}) || {};
+    const yearSel = document.getElementById('monthlyYear');
+    const years = monthlyData.years.map(y => y.year);
+    yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('') +
+        '<option value="all">All time</option>';
+    // A remembered year the new channel has no data for falls back to its most recent year.
+    yearSel.value = (stored.year === 'all' || years.indexOf(Number(stored.year)) >= 0)
+        ? stored.year : String(years[0]);
+
+    loading.classList.add('d-none');
+    wrap.classList.remove('d-none');
+    renderMonthly();
+}
+
+function renderMonthly() {
+    if (!monthlyData || !monthlyData.channelKey) return;
+
+    const yearValue = document.getElementById('monthlyYear').value;
+    const channelName = bareChannel(monthlyData.channelKey);
+    const allTime = yearValue === 'all';
+    const year = Number(yearValue);
+
+    const stats = allTime
+        ? (monthlyData.allTime || [])
+        : ((monthlyData.years.find(y => y.year === year) || {}).months || []);
+
+    const byMonth = {};
+    stats.forEach(m => { byMonth[m.month] = m; });
+
+    // "Not yet" and "nothing recorded" are different answers and the table says so. The cutoff is
+    // the browser's own calendar month, so a viewer never sees their current month called future.
+    const now = new Date();
+    const isFuture = m => !allTime &&
+        (year > now.getFullYear() || (year === now.getFullYear() && m > now.getMonth() + 1));
+
+    document.getElementById('monthlyHead').innerHTML =
+        `<th class="text-start text-body-secondary small">${unitLabel(channelName)}</th>` +
+        MONTH_NAMES.map((n, i) =>
+            `<th class="${!allTime && i === now.getMonth() && year === now.getFullYear() ? 'text-primary' : ''}">${n}</th>`
+        ).join('');
+
+    const row = (label, pick, cls) =>
+        `<tr><th class="text-start fw-normal ${cls || ''}">${label}</th>` +
+        MONTH_NAMES.map((n, i) => {
+            const m = byMonth[i + 1];
+            if (!m) return `<td class="text-body-secondary ${cls || ''}">${isFuture(i + 1) ? 'n/a' : '–'}</td>`;
+            return `<td class="${cls || ''}">${pick(m)}</td>`;
+        }).join('') + '</tr>';
+
+    document.getElementById('monthlyBody').innerHTML =
+        row('Avg high', m => valueOnly(channelName, m.avgHigh)) +
+        row('Avg',      m => valueOnly(channelName, m.avg)) +
+        row('Avg low',  m => valueOnly(channelName, m.avgLow)) +
+        row('Days',     m => m.days, 'small text-body-secondary');
+}
+
+document.getElementById('monthlyChannel').addEventListener('change', e => {
+    writeStore(STORE.monthly, { channel: e.target.value, year: document.getElementById('monthlyYear').value });
+    loadMonthly(e.target.value);
+});
+
+document.getElementById('monthlyYear').addEventListener('change', e => {
+    writeStore(STORE.monthly, { channel: document.getElementById('monthlyChannel').value, year: e.target.value });
+    renderMonthly();
+});
+
+// The table holds raw °C and converts on render, so a unit toggle is a redraw, not a refetch.
+window.addEventListener('tempUnitChanged', () => { if (monthlyLoaded) renderMonthly(); });
+
 function updateExportLink() {
     const period = document.getElementById('exportPeriod').value;
     const date = document.getElementById('exportDate').value;
@@ -435,13 +624,17 @@ function escHtml(s) {
         .replace(/"/g, '&quot;');
 }
 
-// Load records when tab is shown, and remember which tab that was.
+// Load a tab's data the first time it is shown, and remember which tab that was. Both tables are
+// a query the Period Summary never needs, so neither is paid for until someone asks.
 document.querySelectorAll('#historyTabs [data-bs-toggle="tab"]').forEach(btn => {
     btn.addEventListener('shown.bs.tab', () => {
         writeStore(STORE.tab, btn.dataset.bsTarget);
         if (btn.dataset.bsTarget === '#tab-records' &&
             !document.getElementById('recordsLoading').classList.contains('d-none')) {
             loadRecords();
+        }
+        if (btn.dataset.bsTarget === '#tab-monthly' && !monthlyLoaded) {
+            loadMonthly((readStore(STORE.monthly, {}) || {}).channel);
         }
     });
 });

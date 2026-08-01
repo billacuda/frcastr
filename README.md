@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.8.1](CHANGELOG.md)**
+## **Current version [0.9.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -162,11 +162,20 @@ is sent to the server, nothing is recorded, and other viewers keep seeing live w
 
 ## History and channel labels
 
-The **History** page charts a period, exports it as CSV, and lists all-time records. Series are keyed
-per device — `temperature.indoor@outdoor-01` — so two sensors on one canonical channel draw as two
-lines instead of one, and the CSV carries a **Device** column beside the channel. Channels from pull
-sources keep their bare names. Hidden channels, series colors, the period and date, and the active
-tab are remembered in the browser, so reopening the page returns to the view you left.
+The **History** page charts a period, tabulates it by month, exports it as CSV, and lists all-time
+records. Series are keyed per device — `temperature.indoor@outdoor-01` — so two sensors on one
+canonical channel draw as two lines instead of one, and the CSV carries a **Device** column beside
+the channel. Channels from pull sources keep their bare names. Hidden channels, series colors, the
+period and date, the monthly channel and year, and the active tab are remembered in the browser, so
+reopening the page returns to the view you left.
+
+**Monthly Data** puts all twelve months across the top with that month's average high, average, and
+average low beneath, plus how many days of data each column stands on. Pick a year, or **All time**
+to pool every month across every year — pooled from the daily figures rather than averaged from the
+yearly averages, so three days in one year cannot outweigh a full month in another. A month that
+recorded nothing shows `–`, one that has not happened yet shows `n/a`, and the month you are living
+in averages the days it has. Days are the station's days, not UTC's, taken from
+**Setup → Station → Time zone**. Any logged channel can be tabulated, not just temperature.
 
 Times are stored in UTC and rendered in **your** local time, in the browser. Readings arrive from
 devices and background pollers with no idea who will eventually look at them, and the server has no

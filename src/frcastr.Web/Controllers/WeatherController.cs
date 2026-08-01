@@ -257,6 +257,58 @@ public class WeatherController(
     }
 
     /// <summary>
+    /// Per-month averages for one channel, every year in one response. Also returns the channels
+    /// worth offering, so the Monthly Data tab can build its picker from the same call.
+    /// </summary>
+    [HttpGet("monthly")]
+    public async Task<IActionResult> Monthly(string? channel = null, CancellationToken ct = default)
+    {
+        // The picker is built from the records table — one row per (channel, device) that has ever
+        // reported. That is the same set the All-Time Records tab lists and far cheaper than a
+        // DISTINCT over the readings, and wind direction drops out for the same reason it does
+        // there: a compass bearing has no meaningful average.
+        var records = (await weatherData.GetChannelRecordsAsync(ct))
+            .Where(r => !r.ChannelName.StartsWith("wind.direction", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var deviceIds = records.Where(r => r.DeviceId is not null)
+            .Select(r => r.DeviceId!.Value).Distinct().ToList();
+
+        var devices = deviceIds.Count == 0
+            ? []
+            : await db.Devices
+                .Where(d => deviceIds.Contains(d.Id))
+                .Select(d => new { d.Id, d.DeviceId, d.Name })
+                .ToDictionaryAsync(d => d.Id, ct);
+
+        var channels = records.Select(r =>
+        {
+            var device = r.DeviceId is not null && devices.TryGetValue(r.DeviceId.Value, out var d) ? d : null;
+            return new
+            {
+                Key = ChannelKey.Format(r.ChannelName, device?.DeviceId),
+                r.ChannelName,
+                DeviceName = device?.Name
+            };
+        }).OrderBy(c => c.Key, StringComparer.OrdinalIgnoreCase).ToList();
+
+        // An unknown channel falls back to the default rather than being queried: the picker's own
+        // list is the only set this endpoint will scan.
+        var selected = channels.Any(c => c.Key == channel)
+            ? channel!
+            : channels.FirstOrDefault(c => c.Key == "temperature.outdoor")?.Key
+              ?? channels.FirstOrDefault(c => c.ChannelName.StartsWith("temperature.outdoor", StringComparison.OrdinalIgnoreCase))?.Key
+              ?? channels.FirstOrDefault(c => c.ChannelName.StartsWith("temperature", StringComparison.OrdinalIgnoreCase))?.Key
+              ?? channels.FirstOrDefault()?.Key;
+
+        if (selected is null)
+            return Ok(new { channels, channelKey = (string?)null, unit = "", years = Array.Empty<object>(), allTime = Array.Empty<object>() });
+
+        var stats = await weatherData.GetMonthlyStatsAsync(selected, ct);
+        return Ok(new { channels, stats.ChannelKey, stats.Unit, stats.Years, stats.AllTime });
+    }
+
+    /// <summary>
     /// Display labels for channel keys, e.g. { "temperature.indoor": "mqtt" }. Anonymous because
     /// the History page is: channel names are load-bearing (bounds, calculated channels and unit
     /// conversion all key off them), so a label is layered on for display instead of renaming.

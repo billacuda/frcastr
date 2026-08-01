@@ -64,6 +64,7 @@ window.WeatherWidgets = (function () {
         return Number(v).toFixed(dec != null ? dec : 1);
     }
 
+
     function utcTs(isoTs) {
         if (!isoTs) return null;
         if (isoTs.endsWith('Z')) return isoTs;
@@ -382,7 +383,7 @@ window.WeatherWidgets = (function () {
                     '<div class="metric-sub d-flex align-items-baseline gap-1">' +
                     '<span class="fw-semibold">' + fmt(hv, 0) + '</span>' +
                     '<span class="text-body-secondary metric-sub-unit">%</span>' +
-                    (dpV != null ? '<span class="text-body-secondary metric-sub-unit ms-2">dp&thinsp;' + window.formatTemp(dpV) + '&deg;</span>' : '') +
+                    (dpV != null ? '<span class="text-body-secondary metric-sub-unit ms-2">dp&thinsp;' + window.formatTempWhole(dpV) + '&deg;</span>' : '') +
                     '</div>');
             }
         }
@@ -420,10 +421,15 @@ window.WeatherWidgets = (function () {
         var dpR    = showDp ? companionReading(data, ch, humCh, dewCh) : null;
         var dpV    = val(dpR);
 
+        // Dew point is a derived companion reading, not the tile's subject — whole degrees, so it
+        // reads as context rather than competing with the humidity value above it.
         var secondary = dpV != null
-            ? ['<div class="metric-sub text-body-secondary text-truncate">Dew point: ' + window.formatTemp(dpV) + '&deg;' + tu + '</div>']
+            ? ['<div class="metric-sub text-body-secondary text-truncate">Dew point: ' + window.formatTempWhole(dpV) + '&deg;' + tu + '</div>']
             : [];
 
+        // Whole percent on the tile. The tenths are kept in storage and drive the History chart,
+        // but a widget is a glance surface — a tenths digit there is noise that also flickers the
+        // reading on every poll.
         el.innerHTML = buildMetric({
             value:     fmt(v, 0),
             unit:      '%',
@@ -503,13 +509,29 @@ window.WeatherWidgets = (function () {
         var dayPeriods = periods.filter(function (p) { return p.isDaytime !== false; });
         var source = dayPeriods.length ? dayPeriods : periods;
 
+        function dayKey(p) {
+            var d = new Date(utcTs(p.periodStart) || p.periodStart);
+            return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+        }
+
+        // High and low come from every period of the day, night ones included — the day's low
+        // lives in the overnight period the daytime filter below throws away. Keyed on the
+        // viewer's calendar day, the same grouping the dedupe uses, so an evening period cannot
+        // land on one day here and another there.
+        var extremes = {};
+        periods.forEach(function (p) {
+            if (p.temperature == null) return;
+            var e = extremes[dayKey(p)] || (extremes[dayKey(p)] = { hi: null, lo: null });
+            if (e.hi == null || p.temperature > e.hi) e.hi = p.temperature;
+            if (e.lo == null || p.temperature < e.lo) e.lo = p.temperature;
+        });
+
         // One entry per calendar day. With a single source this is a no-op, but aggregating two
         // sources buckets by 6 hours × isDaytime, which can yield two daytime entries for one day —
         // "7 periods" would then render as fewer than 7 days with a repeated weekday.
         var seenDays = {};
         source = source.filter(function (p) {
-            var d = new Date(utcTs(p.periodStart) || p.periodStart);
-            var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+            var key = dayKey(p);
             if (seenDays[key]) return false;
             seenDays[key] = true;
             return true;
@@ -529,16 +551,26 @@ window.WeatherWidgets = (function () {
             var d    = new Date(utcTs(p.periodStart) || p.periodStart);
             var day  = d.toLocaleDateString(undefined, { weekday: 'short' });
             var icon = conditionIcon(p.condition);
+            var ex   = extremes[dayKey(p)] || {};
             // Forecasts are estimates, so they stay whole-degree regardless of the tenths setting.
-            var temp = p.temperature != null
-                ? window.formatTempWhole(p.temperature) + '&deg;' + u
-                : '&ndash;';
+            // High and low share one degree sign and drop the unit letter: two numbers have to fit
+            // where one did, and the unit is already on the navbar toggle. A day down to its last
+            // period has no spread left to show, so it renders as the single figure it is.
+            var temp;
+            if (ex.hi != null && ex.lo != null && ex.hi !== ex.lo) {
+                temp = window.formatTempWhole(ex.hi) + '&deg;<span class="text-body-secondary">/' +
+                       window.formatTempWhole(ex.lo) + '&deg;</span>';
+            } else if (p.temperature != null) {
+                temp = window.formatTempWhole(p.temperature) + '&deg;' + u;
+            } else {
+                temp = '&ndash;';
+            }
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
             html +=
                 '<div class="d-flex flex-column align-items-center fc-item">' +
                 '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(day) + '</div>' +
                 '<div class="fc-icon">' + icon + '</div>' +
-                '<div class="fw-semibold fc-temp">' + temp + '</div>' +
+                '<div class="fw-semibold fc-temp text-nowrap">' + temp + '</div>' +
                 (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
         });
