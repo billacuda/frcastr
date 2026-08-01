@@ -21,8 +21,8 @@
                             <div class="small text-body-secondary">@s.Description</div>
                         </td>
                         <td class="text-end font-monospace">@s.Rows.ToString("N0")</td>
-                        <td class="small text-body-secondary">@(s.Oldest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
-                        <td class="small text-body-secondary">@(s.Newest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
+                        <td class="small text-body-secondary" data-utc="@s.Oldest.ToUtcAttr()" data-utc-format="datetime-full">@(s.Oldest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
+                        <td class="small text-body-secondary" data-utc="@s.Newest.ToUtcAttr()" data-utc-format="datetime-full">@(s.Newest?.ToString("yyyy-MM-dd HH:mm") ?? "–")</td>
                     </tr>
                 }
             </tbody>

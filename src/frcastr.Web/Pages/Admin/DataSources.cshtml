@@ -29,7 +29,7 @@
                             { <span class="badge text-bg-secondary">Disabled</span> }
                         </td>
                         <td>@(s.Type is DataSourceType.Pull or DataSourceType.Forecast or DataSourceType.Alerts or DataSourceType.AirQuality ? s.PollIntervalSeconds.ToString() : "–")</td>
-                        <td class="small text-body-secondary">@(s.LastPolledAt?.ToString("MM/dd HH:mm") ?? "–")</td>
+                        <td class="small text-body-secondary" data-utc="@s.LastPolledAt.ToUtcAttr()">@(s.LastPolledAt?.ToString("MM/dd HH:mm") ?? "–")</td>
                         <td class="small text-danger text-truncate" style="max-width:200px" title="@s.LastError">@(s.LastError ?? "")</td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">

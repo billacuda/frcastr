@@ -82,7 +82,7 @@
                             <li class="list-group-item py-1">
                                 <div class="d-flex justify-content-between">
                                     <span class="small fw-semibold">@log.EventType</span>
-                                    <span class="small text-body-secondary">@log.CreatedAt.ToString("MM/dd HH:mm")</span>
+                                    <span class="small text-body-secondary" data-utc="@log.CreatedAt.ToUtcAttr()">@log.CreatedAt.ToString("MM/dd HH:mm")</span>
                                 </div>
                                 @if (log.EntityName is not null)
                                 {

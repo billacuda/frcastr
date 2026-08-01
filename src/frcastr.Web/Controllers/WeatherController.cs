@@ -243,8 +243,13 @@ public class WeatherController(
                 r.DeviceId,
                 DeviceKey = device?.DeviceId,
                 DeviceName = device?.Name,
-                r.AllTimeMax, r.AllTimeMaxAt, r.AllTimeMaxSourceId,
-                r.AllTimeMin, r.AllTimeMinAt, r.AllTimeMinSourceId
+                r.AllTimeMax, r.AllTimeMaxSourceId,
+                r.AllTimeMin, r.AllTimeMinSourceId,
+                // Stored UTC but read back with an unspecified Kind, so they would serialize
+                // without a zone and the browser would read them as already-local — putting an
+                // evening record on tomorrow's date. Tag them so the browser does the conversion.
+                AllTimeMaxAt = DateTime.SpecifyKind(r.AllTimeMaxAt, DateTimeKind.Utc),
+                AllTimeMinAt = DateTime.SpecifyKind(r.AllTimeMinAt, DateTimeKind.Utc)
             };
         });
 

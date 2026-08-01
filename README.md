@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.8.0](CHANGELOG.md)**
+## **Current version [0.8.1](CHANGELOG.md)**
 
 ## Stack
 
@@ -167,6 +167,13 @@ per device — `temperature.indoor@outdoor-01` — so two sensors on one canonic
 lines instead of one, and the CSV carries a **Device** column beside the channel. Channels from pull
 sources keep their bare names. Hidden channels, series colors, the period and date, and the active
 tab are remembered in the browser, so reopening the page returns to the view you left.
+
+Times are stored in UTC and rendered in **your** local time, in the browser. Readings arrive from
+devices and background pollers with no idea who will eventually look at them, and the server has no
+idea what zone a viewer is in, so nothing is converted server-side: timestamps travel as UTC
+instants and the page formats them on arrival. That covers the records table, the chart axes, widget
+ages and sunrise/sunset, and the timestamps across the admin pages; hover any of them for the full
+local time. The date pickers likewise open on the browser's calendar day, not the server's.
 
 **Admin → Channels** gives a channel a friendly display name — call `temperature.indoor` "mqtt" on
 screen — without renaming it. Channel names are load-bearing (sanity bounds match on the

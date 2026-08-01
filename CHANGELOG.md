@@ -2,6 +2,27 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.8.1] - 2026-07-31
+
+### Fixed
+- **Timestamps showed UTC instead of local time**, putting an evening record or a recent sighting on
+  tomorrow's date. Two distinct causes, both now fixed everywhere they appear:
+  - `/api/weather/records` served timestamps with no zone. They are stored in UTC but read back
+    from the database with an unspecified `DateTimeKind`, so they serialized bare and the browser
+    took them as already-local. They are now tagged UTC on the way out — the same treatment history
+    points already got — and the **All-Time Records** table converts them. The table also runs its
+    dates through the page's existing `utcTs()` guard, so an untagged instant can no longer be
+    misread.
+  - Server-rendered timestamps were formatted on the server, which has no idea what zone the viewer
+    is in. A new `local-time.js` formats any element carrying a `data-utc` attribute in the
+    browser's own local time and hangs the full timestamp off its tooltip; the server keeps writing
+    its own text as the no-JavaScript fallback. Applied to **Last Seen** on Devices, **Last Polled**
+    on Data Sources, **Last Triggered** on Webhooks, the audit timestamps on Audit Log and the admin
+    dashboard's recent activity, **Created** on Users, and the oldest/newest bounds on Data.
+- **The History date pickers opened on the wrong day** for anyone behind the server's clock — a UTC
+  server handed an evening visitor in the Americas tomorrow's date and an empty chart. Both the
+  chart and export date default to the browser's own calendar day now.
+
 ## [0.8.0] - 2026-07-28
 
 ### Added

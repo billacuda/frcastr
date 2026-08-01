@@ -412,9 +412,9 @@ async function loadRecords() {
             <td>${escHtml(labelFor(r.channelKey || r.channelName))}</td>
             <td class="small text-body-secondary">${r.deviceName ? escHtml(r.deviceName) : '–'}</td>
             <td>${recordCell(r.channelName, r.allTimeMax)}</td>
-            <td>${new Date(r.allTimeMaxAt).toLocaleDateString()}</td>
+            <td>${new Date(utcTs(r.allTimeMaxAt)).toLocaleDateString()}</td>
             <td>${recordCell(r.channelName, r.allTimeMin)}</td>
-            <td>${new Date(r.allTimeMinAt).toLocaleDateString()}</td>
+            <td>${new Date(utcTs(r.allTimeMinAt)).toLocaleDateString()}</td>
         </tr>`).join('');
     document.getElementById('recordsTable').classList.remove('d-none');
 }
@@ -446,6 +446,19 @@ document.querySelectorAll('#historyTabs [data-bs-toggle="tab"]').forEach(btn => 
     });
 });
 
+// Both date pickers are server-rendered with the server's today, and "today" belongs to the
+// viewer: a UTC server hands an evening visitor in the Americas tomorrow's date and an empty
+// chart. Re-seed them from the browser's own calendar before anything reads them.
+function seedTodayLocal() {
+    const d = new Date();
+    const today = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+    document.getElementById('dateSelect').value = today;
+    document.getElementById('exportDate').value = today;
+    updateExportLink();
+}
+
 function restoreView() {
     const view = readStore(STORE.view, null);
     if (view && view.period) {
@@ -465,6 +478,7 @@ function restoreView() {
 // Labels first: the chart, the sidebar and the records table all render through labelFor().
 (async function init() {
     await loadChannelLabels();
+    seedTodayLocal();
     restoreView();
     loadHistory();
 })();

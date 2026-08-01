@@ -28,7 +28,7 @@
                             <td class="small">@w.Operator @w.Threshold @w.Unit</td>
                             <td class="small text-truncate" style="max-width:200px" title="@w.WebhookUrl">@w.WebhookUrl</td>
                             <td>@(w.IsEnabled ? "✓" : "–")</td>
-                            <td class="small text-body-secondary">@(w.LastTriggeredAt?.ToString("MM/dd HH:mm") ?? "–")</td>
+                            <td class="small text-body-secondary" data-utc="@w.LastTriggeredAt.ToUtcAttr()">@(w.LastTriggeredAt?.ToString("MM/dd HH:mm") ?? "–")</td>
                             <td class="text-end">
                                 <div class="btn-group btn-group-sm">
                                     <button class="btn btn-outline-primary" onclick="openEditModal(@w.Id)">Edit</button>

@@ -40,7 +40,7 @@
                 @foreach (var log in Model.Logs)
                 {
                     <tr>
-                        <td class="small text-body-secondary text-nowrap">@log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td class="small text-body-secondary text-nowrap" data-utc="@log.CreatedAt.ToUtcAttr()" data-utc-format="datetime-sec">@log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
                         <td class="small fw-semibold">@log.EventType</td>
                         <td class="small">@(log.UserName ?? log.UserId ?? "–")</td>
                         <td class="small">

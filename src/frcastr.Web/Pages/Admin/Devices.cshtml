@@ -71,13 +71,13 @@
                                 }
                                 else if (stale || !d.IsOnline)
                                 {
-                                    <span class="badge text-bg-danger" title="@d.LastSeenAt?.ToString("u")">
-                                        @(!d.IsOnline ? "offline" : "stale") — @d.LastSeenAt?.ToString("MM/dd HH:mm")
+                                    <span class="badge text-bg-danger">
+                                        @(!d.IsOnline ? "offline" : "stale") — <span data-utc="@d.LastSeenAt.ToUtcAttr()">@d.LastSeenAt?.ToString("MM/dd HH:mm")</span>
                                     </span>
                                 }
                                 else
                                 {
-                                    <span class="text-body-secondary" title="@d.LastSeenAt?.ToString("u")">@d.LastSeenAt?.ToString("MM/dd HH:mm")</span>
+                                    <span class="text-body-secondary" data-utc="@d.LastSeenAt.ToUtcAttr()">@d.LastSeenAt?.ToString("MM/dd HH:mm")</span>
                                 }
                             </td>
                             <td>

@@ -20,7 +20,7 @@
                         data-roles="@string.Join(",", row.Roles)">
                         <td>@row.User.Email</td>
                         <td>@string.Join(", ", row.Roles)</td>
-                        <td class="small text-body-secondary">@row.User.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td class="small text-body-secondary" data-utc="@row.User.CreatedAt.ToUtcAttr()" data-utc-format="date">@row.User.CreatedAt.ToString("yyyy-MM-dd")</td>
                         <td class="text-end">
                             <div class="btn-group btn-group-sm">
                                 <button class="btn btn-outline-secondary" onclick="openRolesModal('@row.User.Id')">Roles</button>
