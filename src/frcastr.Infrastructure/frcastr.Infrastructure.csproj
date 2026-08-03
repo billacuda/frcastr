@@ -6,6 +6,9 @@
 
   <ItemGroup>
     <PackageReference Include="CoordinateSharp" Version="3.4.1.1" />
+    <!-- Used directly by ProtectedStringConverter; it arrives transitively through Identity too,
+         but a transitive reference is not a promise. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.Abstractions" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

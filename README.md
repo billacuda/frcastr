@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.10.0](CHANGELOG.md)**
+## **Current version [0.11.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -71,6 +71,31 @@ A push reading is `{"channel": "temperature.outdoor", "value": 21.4, "unit": "C"
 `"device": "<Device ID>"` to attribute it to a registered device; unlike MQTT, push does not
 auto-register, so an unrecognised id is reported back rather than quietly creating one. Readings
 without it are station-wide.
+
+### Data source secrets
+
+A source's **Config** holds its credentials — the MQTT broker password, upstream API keys, the hash
+of a push source's API key. It is encrypted in the database with ASP.NET Data Protection, using the
+key ring in `data-protection-keys\` at the site root.
+
+That makes the key ring as valuable as a database backup, and a backup of the database alone is not
+enough to restore a working station:
+
+- **Back up `data-protection-keys\` with the database.** Restoring one without the other leaves
+  every source's config unreadable. The app says so plainly rather than treating an undecryptable
+  secret as an empty one, which would let the next save overwrite it.
+- **Keep the two together when moving the site.** The keys are protected at rest by the host, so a
+  different machine or a changed app pool identity may not be able to read them even if the folder
+  is copied. Moving a station means re-entering source credentials unless the key ring moves in a
+  form the new host can decrypt.
+- `deploy.ps1` excludes the folder from its mirror. Whatever backs up the server needs to include
+  it.
+
+There is no way to recover a config whose keys are gone. The remedy is to clear that source's
+Config and re-enter its credentials.
+
+Values written before encryption existed are read as-is and rewritten encrypted the first time the
+app starts, so upgrading needs no manual step.
 
 ## MQTT devices
 

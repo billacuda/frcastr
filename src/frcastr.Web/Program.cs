@@ -34,7 +34,17 @@ builder.Services.AddDbContext<ApplicationDbContext>((provider, options) =>
 });
 
 // ── Data Protection ───────────────────────────────────────────────────────────
+// This key ring now protects stored data source secrets as well as auth cookies, so losing it costs
+// more than a round of logouts. Two things follow:
+//
+//   - SetApplicationName is explicit. The default discriminator is derived from the content root
+//     path, so moving or renaming the IIS site silently produced a different key isolation scope
+//     and everything encrypted under the old one stopped decrypting. A fixed name unbinds the data
+//     from where the app happens to live.
+//   - deploy.ps1 excludes data-protection-keys from its mirror, and the folder needs to be in
+//     whatever backs up the server. See "Data source secrets" in the README.
 builder.Services.AddDataProtection()
+    .SetApplicationName("frcastr")
     .PersistKeysToFileSystem(new System.IO.DirectoryInfo(
         Path.Combine(builder.Environment.ContentRootPath, "data-protection-keys")));
 
@@ -193,7 +203,6 @@ builder.Services.AddHealthChecks()
 // ── OpenAPI ───────────────────────────────────────────────────────────────────
 builder.Services.AddOpenApi();
 
-// ── Pages + Controllers ───────────────────────────────────────────────────────
 // ── CSRF ──────────────────────────────────────────────────────────────────────
 // The admin API is cookie-authenticated JSON, and MVC does not validate antiforgery tokens for
 // controllers unless told to. SameSite=Lax on the Identity cookie blocks the cross-site form post
@@ -222,6 +231,47 @@ using (var _migrateScope = app.Services.CreateScope())
 {
     _migrateScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
         .Database.Migrate();
+}
+
+// Encrypt any data source config still stored in the clear from before ProtectedStringConverter
+// existed. It cannot be a SQL migration: the encryption is done by the app with its own key ring,
+// which a migration script has no access to. Reading a legacy row yields plaintext and writing it
+// back encrypts it, so the pass is just a load-and-resave, and the LIKE below keeps it from running
+// on every subsequent boot.
+using (var _protectScope = app.Services.CreateScope())
+{
+    try
+    {
+        var _db = _protectScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var _plaintextRows = _db.Database
+            .SqlQueryRaw<int>(
+                "SELECT COUNT(*) AS Value FROM [DataSources] " +
+                $"WHERE [Config] IS NOT NULL AND [Config] NOT LIKE '{ProtectedStringConverter.Marker}%'")
+            .AsEnumerable()
+            .First();
+
+        if (_plaintextRows > 0)
+        {
+            var _sources = _db.DataSources.ToList();
+            foreach (var _source in _sources)
+            {
+                // Read already decrypted (or passed through); marking it modified makes the
+                // converter write it back encrypted.
+                _db.Entry(_source).Property(s => s.Config).IsModified = true;
+            }
+            _db.SaveChanges();
+            app.Logger.LogInformation(
+                "Encrypted {Count} data source config value(s) that were stored in plaintext.",
+                _plaintextRows);
+        }
+    }
+    catch (Exception ex)
+    {
+        // Pre-setup databases have no schema yet. A failure here leaves the rows readable —
+        // the converter passes plaintext through — so it is not a reason to refuse to start.
+        app.Logger.LogWarning(ex, "Could not encrypt stored data source secrets on startup.");
+    }
 }
 
 // Prime the sensor-staleness tracker from stored readings. It is in-memory, so without this a

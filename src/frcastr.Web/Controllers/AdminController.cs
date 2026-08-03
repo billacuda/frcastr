@@ -787,8 +787,8 @@ public class AdminController(
 
     /// <summary>
     /// Data sources without their Config. That blob holds the MQTT broker password and every
-    /// upstream API key in plaintext, and a list endpoint is the wrong place for it — callers that
-    /// genuinely need it ask for one source's config explicitly, below.
+    /// upstream API key, and a list endpoint is the wrong place for it — callers that genuinely
+    /// need it ask for one source's config explicitly, below.
     /// </summary>
     [HttpGet("datasources")]
     public async Task<IActionResult> GetDataSources(CancellationToken ct)
@@ -798,7 +798,10 @@ public class AdminController(
             {
                 s.Id, s.Name, s.Type, s.Url, s.IsEnabled, s.PollIntervalSeconds,
                 s.LastPolledAt, s.LastError, s.CreatedAt,
-                HasConfig = s.Config != null && s.Config != ""
+                // Null check only. Config is encrypted at rest and Data Protection is randomised,
+                // so a server-side comparison against "" encrypts the empty string afresh and never
+                // matches — it would report every source as configured.
+                HasConfig = s.Config != null
             })
             .ToListAsync(ct));
 

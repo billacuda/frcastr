@@ -2,6 +2,37 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.11.0] - 2026-08-03
+
+### Security
+- **Data source credentials are encrypted at rest.** A source's `Config` holds the MQTT broker
+  password, every upstream API key and the hash of a push source's key, and it sat in the database
+  in the clear. It is now encrypted with ASP.NET Data Protection through an EF value converter, so
+  the encryption happens in one place and none of the fourteen readers — every adapter, the MQTT
+  ingestion service, the push key lookup — needed to know about it.
+  - Values written before this are recognised by the absence of a marker prefix and read through
+    unchanged, then rewritten encrypted by a one-time startup pass. Upgrading needs no manual step.
+    The pass cannot be a SQL migration: the encryption belongs to the app and its key ring, which a
+    migration script has no access to.
+  - A value that cannot be decrypted raises an error naming the key folder rather than reading as
+    empty. Treating it as empty would present the source as unconfigured and let the next save
+    write that emptiness over a secret that is unreadable rather than lost.
+  - **The Data Protection key ring is now as valuable as a database backup.** Restoring one without
+    the other leaves every source's config unrecoverable, and the remedy is to clear the affected
+    Config and re-enter its credentials. See "Data source secrets" in the README.
+- **The Data Protection application name is set explicitly.** It defaulted to a value derived from
+  the content root path, so renaming or moving the IIS site silently changed the key isolation
+  scope and everything encrypted under the old one stopped decrypting — survivable when the key
+  ring only protected auth cookies, not once stored secrets depend on it. **Upgrading signs every
+  user out once**, as existing cookies were issued under the old scope.
+
+### Fixed
+- **`hasConfig` would have reported every data source as configured** once `Config` became
+  ciphertext. It tested `Config != ""` in SQL, and Data Protection is randomised — the same
+  plaintext encrypts differently every time, so the comparison encrypted a fresh empty string on
+  each query and never matched. It is a null check now, and nothing else filters on the column's
+  contents.
+
 ## [0.10.0] - 2026-08-03
 
 ### Fixed

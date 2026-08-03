@@ -1,5 +1,6 @@
 using frcastr.Core.Entities;
 using frcastr.Core.Enums;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +8,24 @@ namespace frcastr.Infrastructure.Data;
 
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+    /// <summary>
+    /// Purpose string for the data source secret protector. Fixed and versioned rather than derived
+    /// from anything environmental — it is part of what the ciphertext is bound to, so it cannot
+    /// change without making every stored secret unreadable.
+    /// </summary>
+    private const string ConfigProtectorPurpose = "frcastr.DataSource.Config.v1";
+
+    private readonly IDataProtectionProvider? _dataProtection;
+
+    /// <summary>
+    /// Data Protection is optional, and defaulted rather than given a second constructor so EF has
+    /// no ambiguity to resolve. The design-time factory omits it: <c>dotnet ef</c> only needs the
+    /// schema, and encrypting a column does not change its shape.
+    /// </summary>
+    public ApplicationDbContext(
+        DbContextOptions<ApplicationDbContext> options,
+        IDataProtectionProvider? dataProtection = null) : base(options)
+        => _dataProtection = dataProtection;
 
     public DbSet<Setting>                 Settings                 => Set<Setting>();
     public DbSet<Permission>              Permissions              => Set<Permission>();
@@ -128,6 +146,23 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.Property(s => s.Type).HasConversion<string>().HasMaxLength(20);
             e.Property(s => s.Url).HasMaxLength(2000);
             e.HasIndex(s => s.Name).IsUnique();
+
+            // Config holds the MQTT broker password and every upstream API key. Encrypting it here
+            // rather than at each of the fourteen places that read it means none of them changed.
+            //
+            // Two consequences to keep in mind:
+            //   - Ciphertext is longer than what went in, and the column is unbounded (nvarchar
+            //     max) precisely so this fits.
+            //   - The stored value is no longer comparable in SQL. Data Protection is randomised,
+            //     so the same plaintext encrypts differently every time and a server-side
+            //     `Config == "..."` can never match. Nothing filters on its contents; see the
+            //     null-only check behind HasConfig in AdminController.
+            if (_dataProtection is not null)
+            {
+                e.Property(s => s.Config).HasConversion(
+                    new ProtectedStringConverter(
+                        _dataProtection.CreateProtector(ConfigProtectorPurpose)));
+            }
         });
 
         builder.Entity<Device>(e =>
