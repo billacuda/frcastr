@@ -295,7 +295,7 @@ async function saveDevice() {
         isEnabled: document.getElementById('deviceEnabled').checked,
         channelOverrides: collectOverrides()
     };
-    const r = await fetch('/api/admin/devices/' + id, {
+    const r = await csrfFetch('/api/admin/devices/' + id, {
         method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
     });
     if (!r.ok) { alert('Error: ' + await r.text()); return; }
@@ -304,7 +304,7 @@ async function saveDevice() {
     // reports what it touched rather than doing it silently.
     const pairs = collectRekeys();
     if (pairs.length) {
-        const rk = await fetch('/api/admin/devices/' + id + '/rekey', {
+        const rk = await csrfFetch('/api/admin/devices/' + id + '/rekey', {
             method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(pairs)
         });
         if (!rk.ok) { alert('Saved, but re-keying failed: ' + await rk.text()); return; }

@@ -11,6 +11,13 @@ public class WeatherDataService(
     ApplicationDbContext dbContext,
     ISettingsService settings) : IWeatherDataService
 {
+    /// <summary>
+    /// How far back "current conditions" will look for a channel's most recent reading. Generous
+    /// on purpose — a sensor that has been quiet for days should still show its last value with a
+    /// stale marker rather than vanish from the dashboard.
+    /// </summary>
+    private const int CurrentReadingHorizonDays = 7;
+
     // ── Current readings ──────────────────────────────────────────────────────
 
     public async Task<IReadOnlyDictionary<string, CurrentReading>> GetCurrentReadingsAsync(
@@ -18,7 +25,14 @@ public class WeatherDataService(
     {
         // Latest reading per (channel, device) — grouping by channel alone would let one device
         // overwrite another that reports the same canonical channel.
+        //
+        // Bounded to a recent window rather than grouping the whole table. "Current conditions"
+        // cannot be satisfied by a month-old row anyway, and the unbounded form scanned every
+        // reading the station has ever stored on each cache miss — every 15 seconds.
+        var horizon = DateTime.UtcNow.AddDays(-CurrentReadingHorizonDays);
+
         var latestIds = await dbContext.WeatherReadings
+            .Where(r => r.Timestamp >= horizon)
             .GroupBy(r => new { r.ChannelName, r.DeviceId })
             .Select(g => g.Max(r => r.Id))
             .ToListAsync(ct);
@@ -137,11 +151,35 @@ public class WeatherDataService(
         var threshold = await settings.GetDecimalAsync("Trend.ThresholdDegrees", 0.5m, ct);
 
         var (channelName, deviceKey) = ChannelKey.Split(channelKey);
-        var deviceId = await ResolveDeviceIdAsync(deviceKey, ct);
 
-        var readings = await dbContext.WeatherReadings
-            .Where(r => r.ChannelName == channelName
-                     && (deviceId == null || r.DeviceId == deviceId))
+        IQueryable<WeatherReading> query;
+        if (deviceKey is not null)
+        {
+            var deviceId = await ResolveDeviceIdAsync(deviceKey, ct);
+            if (deviceId is null) return new TrendResult(TrendDirection.Steady, 0m);
+
+            query = dbContext.WeatherReadings
+                .Where(r => r.ChannelName == channelName && r.DeviceId == deviceId);
+        }
+        else
+        {
+            // A bare key used to match every device reporting the channel, so on a station with two
+            // sensors on one canonical channel the sample window interleaved them and the
+            // newest-minus-oldest delta compared different thermometers. It now means the station's
+            // own view: sourceless readings plus the primary device's, the same set
+            // GetCurrentReadingsAsync publishes under that key.
+            var primaryId = await dbContext.Devices
+                .Where(d => d.IsPrimary)
+                .Select(d => (int?)d.Id)
+                .FirstOrDefaultAsync(ct);
+
+            query = primaryId is null
+                ? dbContext.WeatherReadings.Where(r => r.ChannelName == channelName && r.DeviceId == null)
+                : dbContext.WeatherReadings.Where(r => r.ChannelName == channelName
+                                                   && (r.DeviceId == null || r.DeviceId == primaryId));
+        }
+
+        var readings = await query
             .OrderByDescending(r => r.Id)
             .Take(samples)
             .Select(r => r.Value)
@@ -163,7 +201,7 @@ public class WeatherDataService(
 
     public async Task<HistoryResult> GetHistoryAsync(
         IEnumerable<string> channelKeys, DateTime start, DateTime end,
-        CancellationToken ct = default)
+        CancellationToken ct = default, int? maxPointsPerTier = null)
     {
         // Keys may be device-scoped ("temperature.indoor@greenhouse-01"). Query on the canonical
         // channel names, then filter to the requested devices.
@@ -203,16 +241,21 @@ public class WeatherDataService(
         var rawPoints = new List<HistoryDataPoint>();
         var aggPoints = new List<AggregateDataPoint>();
 
+        // Applied in SQL rather than after materialising, so an unbounded request costs the server
+        // a capped result set instead of a year of rows in memory.
+        IQueryable<T> Cap<T>(IQueryable<T> q) =>
+            maxPointsPerTier is int max ? q.Take(max) : q;
+
         // Raw tier: [max(start, rawCutoff), end]
         var rawStart = start > rawCutoff ? start : rawCutoff;
         if (rawStart < end)
         {
-            var rows = await dbContext.WeatherReadings
+            var rows = await Cap(dbContext.WeatherReadings
                 .Where(r => (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.Timestamp >= rawStart && r.Timestamp <= end)
                 .OrderBy(r => r.Timestamp)
-                .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId, r.DeviceId })
+                .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
 
             rawPoints.AddRange(rows.Select(r =>
@@ -224,13 +267,13 @@ public class WeatherDataService(
         var hourlyEnd = end < rawCutoff ? end : rawCutoff;
         if (hourlyStart < hourlyEnd)
         {
-            var rows = await dbContext.WeatherReadingAggregates
+            var rows = await Cap(dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Hourly
                          && (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.PeriodStart >= hourlyStart && r.PeriodStart < hourlyEnd)
                 .OrderBy(r => r.PeriodStart)
-                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId })
+                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
@@ -241,13 +284,13 @@ public class WeatherDataService(
         var dailyEnd = end < hourlyCutoff ? end : hourlyCutoff;
         if (start < dailyEnd)
         {
-            var rows = await dbContext.WeatherReadingAggregates
+            var rows = await Cap(dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Daily
                          && (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
                          && r.PeriodStart >= start && r.PeriodStart < dailyEnd)
                 .OrderBy(r => r.PeriodStart)
-                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId })
+                .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
 
             aggPoints.AddRange(rows.Select(r =>
@@ -442,29 +485,50 @@ public class WeatherDataService(
         CancellationToken ct = default)
         => await dbContext.WeatherChannelRecords.OrderBy(r => r.ChannelName).ToListAsync(ct);
 
-    public async Task UpdateChannelRecordAsync(string channelName, decimal value,
+    public Task UpdateChannelRecordAsync(string channelName, decimal value,
         DateTime timestamp, int sourceId, CancellationToken ct = default, int? deviceId = null)
-    {
-        // Records are scoped per device so one sensor's extreme never overwrites another's.
-        var record = await dbContext.WeatherChannelRecords
-            .FirstOrDefaultAsync(r => r.ChannelName == channelName && r.DeviceId == deviceId, ct);
+        => UpdateChannelRecordsAsync([(channelName, value)], timestamp, sourceId, deviceId, ct);
 
-        if (record is null)
+    public async Task UpdateChannelRecordsAsync(
+        IReadOnlyCollection<(string ChannelName, decimal Value)> readings,
+        DateTime timestamp, int sourceId, int? deviceId = null, CancellationToken ct = default)
+    {
+        if (readings.Count == 0) return;
+
+        var channels = readings.Select(r => r.ChannelName).Distinct().ToList();
+
+        // Records are scoped per device so one sensor's extreme never overwrites another's. The
+        // two branches exist because EF renders `DeviceId == @p` with a null parameter as `= NULL`,
+        // which matches no row — a station-wide record would look absent and be re-inserted, and
+        // the unique index on (ChannelName, DeviceId) would reject it.
+        var existing = await (deviceId is null
+                ? dbContext.WeatherChannelRecords
+                    .Where(r => channels.Contains(r.ChannelName) && r.DeviceId == null)
+                : dbContext.WeatherChannelRecords
+                    .Where(r => channels.Contains(r.ChannelName) && r.DeviceId == deviceId))
+            .ToDictionaryAsync(r => r.ChannelName, ct);
+
+        foreach (var (channelName, value) in readings)
         {
-            dbContext.WeatherChannelRecords.Add(new WeatherChannelRecord
+            if (!existing.TryGetValue(channelName, out var record))
             {
-                ChannelName = channelName,
-                DeviceId = deviceId,
-                AllTimeMax = value,
-                AllTimeMaxAt = timestamp,
-                AllTimeMaxSourceId = sourceId,
-                AllTimeMin = value,
-                AllTimeMinAt = timestamp,
-                AllTimeMinSourceId = sourceId
-            });
-        }
-        else
-        {
+                record = new WeatherChannelRecord
+                {
+                    ChannelName = channelName,
+                    DeviceId = deviceId,
+                    AllTimeMax = value,
+                    AllTimeMaxAt = timestamp,
+                    AllTimeMaxSourceId = sourceId,
+                    AllTimeMin = value,
+                    AllTimeMinAt = timestamp,
+                    AllTimeMinSourceId = sourceId
+                };
+                dbContext.WeatherChannelRecords.Add(record);
+                // Two readings for the same channel in one batch must land on one row.
+                existing[channelName] = record;
+                continue;
+            }
+
             if (value > record.AllTimeMax)
             {
                 record.AllTimeMax = value;

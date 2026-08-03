@@ -6,6 +6,7 @@ using frcastr.Core.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
+using Microsoft.AspNetCore.RateLimiting;
 using frcastr.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,7 +29,16 @@ public class WeatherController(
     {
         var threshold = await settings.GetIntAsync("Alerts.SensorOfflineThresholdMinutes", 10, ct);
         var readings = await weatherData.GetCurrentReadingsAsync(ct);
-        var stale = statusService.GetStaleChannels(threshold);
+
+        // Devices carry their own threshold, and a duty-cycled sensor needs it: an ESP32 that wakes
+        // every five minutes is silent by design for longer than the station-wide default allows,
+        // and without this its tile went stale between every pair of readings. Raising the device's
+        // threshold used to affect only the offline emails, not what the dashboard showed.
+        var deviceThresholds = await db.Devices
+            .Where(d => d.OfflineThresholdMinutes > 0)
+            .ToDictionaryAsync(d => d.Id, d => d.OfflineThresholdMinutes, ct);
+
+        var stale = statusService.GetStaleChannels(threshold, deviceThresholds);
 
         // staleChannels stays a flat array of channel keys, matching how readings are keyed and
         // how widgets bind — the dashboard looks these up as plain strings.
@@ -261,6 +271,9 @@ public class WeatherController(
     /// worth offering, so the Monthly Data tab can build its picker from the same call.
     /// </summary>
     [HttpGet("monthly")]
+    // Anonymous, and every call scans a channel's entire history. The aggregation happens in SQL so
+    // the response stays small, but the scan does not — same bulk budget as history and export.
+    [EnableRateLimiting("WeatherBulkPolicy")]
     public async Task<IActionResult> Monthly(string? channel = null, CancellationToken ct = default)
     {
         // The picker is built from the records table — one row per (channel, device) that has ever
@@ -328,7 +341,15 @@ public class WeatherController(
     /// <summary>Settings key prefix for channel display labels; see AdminController for writes.</summary>
     public const string ChannelLabelPrefix = "Channel.Label.";
 
+    /// <summary>
+    /// Caps how many rows either endpoint below will pull per storage tier. Both are anonymous, and
+    /// <c>period=year</c> with no channel filter otherwise asks the server to materialise every row
+    /// the station holds — an export additionally buffers the whole thing as a string.
+    /// </summary>
+    private const int MaxPointsPerTier = 200_000;
+
     [HttpGet("history")]
+    [EnableRateLimiting("WeatherBulkPolicy")]
     public async Task<IActionResult> History(
         string period = "day",
         string? date = null,
@@ -354,11 +375,12 @@ public class WeatherController(
         if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
-        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct);
+        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct, MaxPointsPerTier);
         return Ok(result);
     }
 
     [HttpGet("export")]
+    [EnableRateLimiting("WeatherBulkPolicy")]
     public async Task<IActionResult> Export(
         string period = "day",
         string? date = null,
@@ -384,7 +406,7 @@ public class WeatherController(
         if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
-        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct);
+        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct, MaxPointsPerTier);
 
         // Without a device column two sensors on the same canonical channel are indistinguishable
         // in the file. The channel keeps its canonical name — an export is read by machines, so a
@@ -405,10 +427,15 @@ public class WeatherController(
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", filename);
     }
 
+    /// <summary>
+    /// The most recent unexpired alert payload, as stored by AlertsRefreshBackgroundService. Served
+    /// as raw JSON rather than round-tripped through a model: the cache already holds the exact
+    /// array the widget consumes, and re-serializing it only invites the two shapes to drift.
+    /// </summary>
     private async Task<string?> GetLatestAlertCacheAsync(CancellationToken ct)
-    {
-        // Injecting ApplicationDbContext directly here would create a circular dep; use a scoped service.
-        // AlertsJson is served from in-memory via IAlertCacheReader (stub for now — see WeatherController full wiring)
-        return await Task.FromResult<string?>(null);
-    }
+        => await db.AlertCaches
+            .Where(ac => ac.ValidUntil > DateTime.UtcNow)
+            .OrderByDescending(ac => ac.FetchedAt)
+            .Select(ac => ac.AlertsJson)
+            .FirstOrDefaultAsync(ct);
 }

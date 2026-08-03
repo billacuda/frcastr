@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.9.0](CHANGELOG.md)**
+## **Current version [0.10.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -49,17 +49,28 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 .\deploy.ps1 -IISSiteName "frcastr" -ConnectionString "Server=.;Database=frcastr;..."
 ```
 
+The copy mirrors the publish output, so anything at the site root that is not part of a build is
+deleted unless excluded. Preserved: `setup-generated.json`, `appsettings.Production.json`,
+`uploads\` and `data-protection-keys\`. That last one is the key ring the app encrypts auth cookies
+with — it is created at runtime and never published, so removing it from the exclusion list signs
+every user out on the next deploy.
+
 ## Data sources
 
 | Type | Description |
 |---|---|
-| Push | HTTP `POST /api/ingest` with `X-Api-Key` header |
+| Push | HTTP `POST /api/ingest` with `X-Api-Key` header; `POST /api/ingest/batch` for up to 100 at once |
 | Pull | Periodic HTTP fetch (OpenWeatherMap, generic JSON) |
 | Forecast | NWS, OpenWeatherMap, weatherapi.com, generic JSON proxy |
 | MQTT | Subscribe to broker topics; multi-device via topic patterns, JSON or bare-decimal payloads |
 | DataSink | Upload to Weather Underground, PWSWeather, or custom endpoint |
 | Alerts | NWS severe weather alerts |
 | AirQuality | OpenWeatherMap Air Pollution API or push ingest |
+
+A push reading is `{"channel": "temperature.outdoor", "value": 21.4, "unit": "C"}`. Add
+`"device": "<Device ID>"` to attribute it to a registered device; unlike MQTT, push does not
+auto-register, so an unrecognised id is reported back rather than quietly creating one. Readings
+without it are station-wide.
 
 ## MQTT devices
 
@@ -196,11 +207,21 @@ CSV export always uses canonical names, so two exports of the same data cannot d
 ## Data maintenance
 
 **Admin → Data** lists what is stored — row counts and date ranges for raw readings, hourly and
-daily aggregates, all-time records, and the forecast and alert caches — and can purge history,
-either everything or everything before a date, per store. **Preview** reports what would be deleted
-before anything is; the purge itself requires typing `PURGE` and is audit-logged. Devices, data
-sources, widgets, dashboard layouts, users and settings are never touched. There is no undo, so
-take a backup first.
+daily aggregates, all-time records, and the forecast and alert caches — and can purge history, per
+store. **Preview** reports what would be deleted before anything is; the purge itself requires
+typing `PURGE` and is audit-logged. Devices, data sources, widgets, dashboard layouts, users and
+settings are never touched. There is no undo, so take a backup first.
+
+A purge is scoped by a date range and optionally one sensor. Both dates read as inclusive in the
+station's time zone and either may be left open, so picking one day for both bounds purges exactly
+that day — what a sensor test run needs. Narrowing to one sensor leaves the forecast and alert
+caches alone, since they are station-wide and not attributable to a device; combined with
+**Everything** it erases that sensor's entire history and nothing else. An unbounded purge has to be
+asked for explicitly.
+
+All-time records are recalculated rather than left standing on deleted readings: any record whose
+high or low was set inside the purged range is recomputed from what survived, and one with nothing
+left behind it is cleared. Tick **Delete all-time records outright** to remove the rows instead.
 
 Passive retention still applies on its own: see the **Retention** section of Settings for how long
 raw readings, aggregates and records are kept before the background services roll them off.

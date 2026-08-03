@@ -70,7 +70,7 @@ async function savePerms(roleId, btn) {
         resource: cb.dataset.resource,
         action: cb.dataset.action
     }));
-    const r = await fetch('/api/admin/roles/' + roleId + '/permissions', {
+    const r = await csrfFetch('/api/admin/roles/' + roleId + '/permissions', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions })
@@ -82,7 +82,7 @@ async function savePerms(roleId, btn) {
 async function addRole() {
     const name = prompt('Role name:');
     if (!name) return;
-    const r = await fetch('/api/admin/roles', {
+    const r = await csrfFetch('/api/admin/roles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })

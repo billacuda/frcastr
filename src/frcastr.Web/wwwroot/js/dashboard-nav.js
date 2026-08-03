@@ -45,7 +45,7 @@
             var name = prompt('Dashboard name:');
             if (!name || !name.trim()) return;
             name = name.trim();
-            fetch('/api/dashboard?name=' + encodeURIComponent(name), { method: 'POST' })
+            csrfFetch('/api/dashboard?name=' + encodeURIComponent(name), { method: 'POST' })
                 .then(function () {
                     window.location.href = '/?dash=' + encodeURIComponent(name);
                 })
@@ -82,7 +82,7 @@
         var newName = prompt('Copy "' + name + '" to new dashboard name:');
         if (!newName || !newName.trim()) return;
         newName = newName.trim();
-        fetch('/api/dashboard/copy?from=' + encodeURIComponent(name) + '&to=' + encodeURIComponent(newName), { method: 'POST' })
+        csrfFetch('/api/dashboard/copy?from=' + encodeURIComponent(name) + '&to=' + encodeURIComponent(newName), { method: 'POST' })
             .then(function (r) {
                 if (r.ok) {
                     window.location.href = '/?dash=' + encodeURIComponent(newName);
@@ -97,7 +97,7 @@
         e.preventDefault();
         e.stopPropagation();
         if (!confirm('Delete dashboard "' + name + '" and all its widgets?')) return;
-        fetch('/api/dashboard?name=' + encodeURIComponent(name), { method: 'DELETE' })
+        csrfFetch('/api/dashboard?name=' + encodeURIComponent(name), { method: 'DELETE' })
             .then(function (r) {
                 if (r.ok) {
                     localStorage.removeItem('frcastr-last-dash');

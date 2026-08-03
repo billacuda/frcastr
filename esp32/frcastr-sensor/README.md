@@ -15,6 +15,7 @@ frcastr registers them automatically.
 | State payload | `{"temperature":21.42,"humidity":55.10,"firmware":"1.0.0"}` |
 | Status topic | `frcastr/<DEVICE_ID>/status` (retained) |
 | Status payload | `online` on connect, `offline` via MQTT last will |
+| Cadence | one reading every `SLEEP_INTERVAL_MS` (default 5 min) |
 
 Only the fields listed in the source's `fieldMapping` are stored; anything else is ignored, so you
 can add fields to the payload without touching the server. `temperature` is °C and `humidity` is
@@ -33,6 +34,38 @@ Set `SHT3X_ADDRESS` to `0x45` if the ADDR pin is tied high.
 work without it). `VDD` → 3V3, `GND` → GND. Comment out `SENSOR_SHT3X` and uncomment
 `SENSOR_DS18B20` in `config.h`. Multiple DS18B20s can share the same bus/pin, but this firmware
 only reads the first one it finds (`getTempCByIndex(0)`).
+
+## Deep sleep
+
+By default the board runs a duty cycle rather than a continuous loop: wake, read, publish, sleep
+five minutes, repeat. An ESP32-S3 left running flat out warms its own board by several degrees, and
+a DHT22 mounted near it reports that heat as room temperature — sleeping between readings is what
+keeps the sensor measuring the room instead of the regulator.
+
+A cycle is roughly 3–5 s awake, most of it WiFi association:
+
+1. Start the radio, then wait out `SENSOR_WARMUP_MS` (2 s) so the sensor settles while the radio
+   associates — the two overlap instead of running back to back.
+2. Read the sensor, retrying up to `SENSOR_READ_ATTEMPTS` times (a cold DHT22 often misses its
+   first read). A failed read skips the publish and sleeps immediately rather than spending the
+   awake budget getting onto the network for nothing.
+3. Connect, publish, disconnect cleanly, sleep. `AWAKE_BUDGET_MS` (15 s) caps the whole cycle, so
+   a down broker or a missing AP costs one wake, not a board that stays up burning power.
+
+The AP's BSSID and channel are cached in RTC memory, so a wake re-associates without a full scan.
+
+Two consequences worth knowing:
+
+- **Status stays `online` between readings.** The board sends a proper MQTT `DISCONNECT` before
+  sleeping, so the broker discards the last will instead of flapping the device offline every five
+  minutes. The trade-off: a board that dies while asleep never fires its will, so frcastr notices
+  it by the readings going stale rather than by a retained `offline`.
+- **Serial output is per-wake.** `pio device monitor` shows a fresh banner and `Wake #n` each
+  cycle, then nothing for five minutes. That is the sketch restarting from `setup()`, not a crash.
+
+Set `DEEP_SLEEP_ENABLED` to `0` in `config.h` for the old always-on behaviour (publish every
+`PUBLISH_INTERVAL_MS`), which is fine for a DS18B20 on a probe lead or any sensor far enough from
+the board that self-heating doesn't reach it.
 
 ## Build and flash
 
@@ -80,4 +113,10 @@ Mark one device **primary** if you want its readings to also answer to the bare 
 - **Device appears but has no readings** — the payload field names must match the `fieldMapping`
   keys exactly. Values outside the sanity bounds for the mapped channel are dropped and logged.
 - **Readings stop** — check `frcastr/<id>/status`. A retained `offline` means the broker saw the
-  device drop; frcastr emails a device-offline alert once the threshold on the device passes.
+  device drop; frcastr emails a device-offline alert once the threshold on the device passes. With
+  deep sleep enabled the status can still read `online` for a dead board, so set the device's
+  offline threshold above `SLEEP_INTERVAL_MS` — a couple of missed cycles — and let staleness catch
+  it. That threshold governs both the alert email and the dashboard's stale marker, so a board on a
+  five-minute cycle stops being flagged between readings.
+- **A sleeping board is hard to reflash** — it only listens for a few seconds per cycle. Hold BOOT
+  while tapping RESET to force the bootloader before `pio run -t upload`.

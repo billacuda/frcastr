@@ -55,6 +55,13 @@ builder.Services.ConfigureApplicationCookie(opts =>
     opts.ExpireTimeSpan    = TimeSpan.FromDays(30);
 });
 
+// Overrides the above from Settings when configured. Registered as a post-configure hook so it
+// survives an options rebuild; see the type's remarks.
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IPostConfigureOptions<
+        Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>,
+    frcastr.Web.Auth.SessionTimeoutCookieOptions>();
+
 // ── Authorization / RBAC ──────────────────────────────────────────────────────
 builder.Services.AddAuthorization(opts =>
 {
@@ -147,6 +154,17 @@ builder.Services.AddRateLimiter(opts =>
             : RateLimitPartition.GetNoLimiter(string.Empty);
     });
 
+    // History and export are anonymous and can each ask for a year of data. The global 100/min is
+    // far too generous for a request that size, so they get their own much tighter window.
+    opts.AddPolicy("WeatherBulkPolicy", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = 10
+            }));
+
     opts.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -176,8 +194,22 @@ builder.Services.AddHealthChecks()
 builder.Services.AddOpenApi();
 
 // ── Pages + Controllers ───────────────────────────────────────────────────────
+// ── CSRF ──────────────────────────────────────────────────────────────────────
+// The admin API is cookie-authenticated JSON, and MVC does not validate antiforgery tokens for
+// controllers unless told to. SameSite=Lax on the Identity cookie blocks the cross-site form post
+// today, but that leaves the whole mutating surface resting on one cookie attribute — setting
+// SameSite=None to embed a dashboard would open it with no other signal. The header name is what
+// the browser sends it back as; see adminFetch in wwwroot/js/admin-api.js.
+builder.Services.AddAntiforgery(opts => opts.HeaderName = "X-CSRF-TOKEN");
+
 builder.Services.AddRazorPages();
-builder.Services.AddControllers()
+builder.Services.AddControllers(opts =>
+    {
+        // Every non-GET/HEAD/OPTIONS/TRACE action on every controller. Endpoints that cannot carry
+        // a token — the API-key ingest routes — opt out with [IgnoreAntiforgeryToken].
+        opts.Filters.Add<Microsoft.AspNetCore.Mvc.AutoValidateAntiforgeryTokenAttribute>();
+        opts.Filters.Add<frcastr.Web.Auth.AntiforgeryFailureFilter>();
+    })
     .AddJsonOptions(opts =>
         opts.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter()));
@@ -192,25 +224,58 @@ using (var _migrateScope = app.Services.CreateScope())
         .Database.Migrate();
 }
 
-// Apply DB-configured session timeout (overrides 30-day sliding default when set)
-using (var _startupScope = app.Services.CreateScope())
+// Prime the sensor-staleness tracker from stored readings. It is in-memory, so without this a
+// restart leaves it empty and a sensor that died beforehand never registers as stale — it is only
+// ever marked by a reading arriving, which by definition is not going to happen.
+using (var _seedScope = app.Services.CreateScope())
 {
-    var _db = _startupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var _row = _db.Settings.FirstOrDefault(s => s.Key == "Auth.SessionTimeoutHours");
-    if (_row != null && int.TryParse(_row.Value, out var _hours) && _hours > 0)
+    try
     {
-        var _cookieOpts = _startupScope.ServiceProvider
-            .GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
-            .Get(Microsoft.AspNetCore.Identity.IdentityConstants.ApplicationScheme);
-        _cookieOpts.ExpireTimeSpan    = TimeSpan.FromHours(_hours);
-        _cookieOpts.SlidingExpiration = false;
+        var _db = _seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var _status = _seedScope.ServiceProvider.GetRequiredService<IDataSourceStatusService>();
+
+        var _latest = _db.WeatherReadings
+            .GroupBy(r => new { r.ChannelName, r.DeviceId })
+            .Select(g => new { g.Key.ChannelName, g.Key.DeviceId, LastAt = g.Max(r => r.Timestamp) })
+            .ToList();
+
+        _status.Seed(_latest.Select(x =>
+            new KeyValuePair<StaleChannel, DateTime>(
+                new StaleChannel(x.ChannelName, x.DeviceId),
+                DateTime.SpecifyKind(x.LastAt, DateTimeKind.Utc))));
+    }
+    catch (Exception ex)
+    {
+        // Pre-setup databases have no schema yet. Staleness is a display concern, not a reason to
+        // refuse to boot.
+        app.Logger.LogWarning(ex, "Could not seed sensor status from stored readings.");
     }
 }
 
 if (!app.Environment.IsDevelopment())
+{
+    // Without these an unhandled exception returned a bare 500 with an empty body and Pages/Error
+    // was unreachable. Development keeps the framework's developer exception page.
+    app.UseExceptionHandler("/Error");
+    app.UseStatusCodePagesWithReExecute("/Error", "?code={0}");
     app.UseHsts();
+}
 
 app.UseHttpsRedirection();
+
+// Applied before the static-file handlers so uploaded assets are covered too — an admin-supplied
+// SVG is same-origin script otherwise. No CSP here: the pages load Bootstrap and Chart.js from
+// wwwroot but also use inline handlers and inline <script> blocks throughout, so a meaningful
+// policy needs those reworked first.
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "SAMEORIGIN";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    await next();
+});
+
 app.UseStaticFiles();
 
 // Serve uploads from a persistent directory outside the published wwwroot so files
@@ -234,10 +299,15 @@ app.MapRazorPages();
 app.MapControllers();
 
 app.MapHealthChecks("/health").AllowAnonymous();
-app.MapOpenApi("/api/openapi");
 
+// The document describes every admin route and its shape, so it is gated with the UI in front of
+// it rather than left open behind an authorized viewer.
+var openApi = app.MapOpenApi("/api/openapi");
 var scalar = app.MapScalarApiReference("/scalar");
 if (!app.Environment.IsDevelopment())
+{
+    openApi.RequireAuthorization("AdministratorOnly");
     scalar.RequireAuthorization("AdministratorOnly");
+}
 
 app.Run();

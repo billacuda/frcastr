@@ -40,7 +40,13 @@ public class HourlyAggregationBackgroundService(
         CancellationToken ct)
     {
         var rawRetention = await settings.GetIntAsync("Weather.RawRetentionDays", 30, ct);
-        var cutoff = DateTime.UtcNow.AddDays(-rawRetention);
+
+        // Snapped down to the top of the hour. The retention instant lands mid-hour, and rolling up
+        // a partial bucket is unrecoverable: the bucket is written from the few minutes that fell
+        // before the instant, its readings are deleted, and on the next run the rest of that hour
+        // is grouped into the same bucket, skipped by the dedup below because a row already exists,
+        // and then deleted too. Only whole hours are ever aggregated or pruned.
+        var cutoff = HourStart(DateTime.UtcNow.AddDays(-rawRetention));
 
         if (!await db.WeatherReadings.AnyAsync(r => r.Timestamp < cutoff, ct))
             return;
@@ -48,9 +54,13 @@ public class HourlyAggregationBackgroundService(
         // Aggregate in SQL
         var groups = await db.WeatherReadings
             .Where(r => r.Timestamp < cutoff)
+            // Unit is not part of the key. A source that spells the same unit two ways inside one
+            // hour ("C" and "°C", say) would otherwise split the bucket in two, and one bucket is
+            // exactly what the unique index on the aggregates table now enforces — the split would
+            // fail the insert and wedge aggregation rather than produce a tidier row.
             .GroupBy(r => new
             {
-                r.ChannelName, r.SourceId, r.DeviceId, r.Unit,
+                r.ChannelName, r.SourceId, r.DeviceId,
                 Year = r.Timestamp.Year,
                 Month = r.Timestamp.Month,
                 Day = r.Timestamp.Day,
@@ -62,7 +72,8 @@ public class HourlyAggregationBackgroundService(
                 Avg = g.Average(r => r.Value),
                 Min = g.Min(r => r.Value),
                 Max = g.Max(r => r.Value),
-                Count = g.Count()
+                Count = g.Count(),
+                Unit = g.Max(r => r.Unit)
             })
             .ToListAsync(ct);
 
@@ -79,7 +90,8 @@ public class HourlyAggregationBackgroundService(
             Min = g.Min,
             Max = g.Max,
             Count = g.Count,
-            Unit = g.Key.Unit
+            // Non-null: Unit is a required column and a group always has at least one row.
+            Unit = g.Unit!
         }).ToList();
 
         // Dedup: skip buckets that already have an aggregate row
@@ -120,4 +132,7 @@ public class HourlyAggregationBackgroundService(
             throw;
         }
     }
+
+    private static DateTime HourStart(DateTime utc)
+        => new(utc.Year, utc.Month, utc.Day, utc.Hour, 0, 0, DateTimeKind.Utc);
 }

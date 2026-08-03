@@ -5,7 +5,7 @@
 // Must be unique per board. It becomes the {device} segment of the MQTT topic and the
 // Device ID that frcastr auto-registers, so keep it stable: changing it creates a new device.
 #define DEVICE_ID            "greenhouse-01"
-#define FIRMWARE_VERSION     "1.0.0"
+#define FIRMWARE_VERSION     "1.1.0"
 
 // ── WiFi ─────────────────────────────────────────────────────────────────────
 #define WIFI_SSID            "your-ssid"
@@ -43,4 +43,19 @@
 #endif
 
 // ── Timing ───────────────────────────────────────────────────────────────────
-#define PUBLISH_INTERVAL_MS  30000   // 30 s
+// Deep sleep runs the board as a duty cycle: wake, read, publish, sleep. Left running
+// flat out the ESP32-S3 and its regulator warm the board by several degrees, and a DHT22
+// mounted anywhere near it reports that as room temperature. Sleeping between readings
+// keeps the board cold enough to read the room instead of itself.
+//
+// Set to 0 for an always-on board that publishes every PUBLISH_INTERVAL_MS.
+#define DEEP_SLEEP_ENABLED   1
+
+#if DEEP_SLEEP_ENABLED
+  #define SLEEP_INTERVAL_MS    300000  // 5 min asleep between readings
+  #define SENSOR_WARMUP_MS     2000    // settling time after wake before the first read
+  #define SENSOR_READ_ATTEMPTS 2       // a cold DHT22 often misses its first read
+  #define AWAKE_BUDGET_MS      15000   // hard cap: sleep even if WiFi or the broker never came up
+#else
+  #define PUBLISH_INTERVAL_MS  30000   // 30 s
+#endif

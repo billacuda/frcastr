@@ -383,7 +383,7 @@
                     ? { desktop: null, mobile: layoutJson }
                     : { desktop: layoutJson, mobile: null }
             );
-            var resp = await fetch('/api/dashboard/layout?dashboard=' + encodeURIComponent(currentDash), {
+            var resp = await csrfFetch('/api/dashboard/layout?dashboard=' + encodeURIComponent(currentDash), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: body
@@ -405,7 +405,7 @@
         def.config = JSON.stringify(merged);
         if (!cfg.isAuthenticated) return;
         try {
-            await fetch('/api/dashboard/widgets/' + id + '/config', {
+            await csrfFetch('/api/dashboard/widgets/' + id + '/config', {
                 method:  'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body:    JSON.stringify(merged)
@@ -468,7 +468,7 @@
         var name = def ? def.title : 'this widget';
         if (!confirm('Remove "' + escHtml(name) + '" from this dashboard?')) return;
 
-        var r = await fetch('/api/admin/widgets/' + id, { method: 'DELETE' });
+        var r = await csrfFetch('/api/admin/widgets/' + id, { method: 'DELETE' });
         if (!r.ok) { alert('Could not remove widget.'); return; }
 
         var inner = document.querySelector('[data-widget-id="' + id + '"]');
@@ -804,7 +804,7 @@
         parsed = applyColorToConfig('ew', parsed);
         parsed = applyDensityToConfig('ew', parsed);
 
-        var r = await fetch('/api/dashboard/widgets/' + id + '/config', {
+        var r = await csrfFetch('/api/dashboard/widgets/' + id + '/config', {
             method:  'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(parsed || {})
@@ -860,7 +860,7 @@
             dashboardName: currentDash
         };
 
-        var r = await fetch('/api/admin/widgets', {
+        var r = await csrfFetch('/api/admin/widgets', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify(body)

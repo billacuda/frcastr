@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using frcastr.Core.Interfaces;
 
 namespace frcastr.Infrastructure.Services;
@@ -16,11 +17,28 @@ public class DataSourceStatusService : IDataSourceStatusService
         => _lastReceived.TryGetValue(new StaleChannel(channelName, deviceId), out var ts) ? ts : null;
 
     public IReadOnlyList<StaleChannel> GetStaleChannels(int thresholdMinutes)
+        => GetStaleChannels(thresholdMinutes, ReadOnlyDictionary<int, int>.Empty);
+
+    public IReadOnlyList<StaleChannel> GetStaleChannels(
+        int defaultThresholdMinutes, IReadOnlyDictionary<int, int> deviceThresholdMinutes)
     {
-        var cutoff = DateTime.UtcNow.AddMinutes(-thresholdMinutes);
+        var now = DateTime.UtcNow;
         return _lastReceived
-            .Where(kv => kv.Value < cutoff)
+            .Where(kv =>
+            {
+                var threshold = kv.Key.DeviceId is int id &&
+                                deviceThresholdMinutes.TryGetValue(id, out var perDevice) && perDevice > 0
+                    ? perDevice
+                    : defaultThresholdMinutes;
+                return kv.Value < now.AddMinutes(-threshold);
+            })
             .Select(kv => kv.Key)
             .ToList();
+    }
+
+    public void Seed(IEnumerable<KeyValuePair<StaleChannel, DateTime>> lastReceived)
+    {
+        foreach (var (channel, timestamp) in lastReceived)
+            _lastReceived.TryAdd(channel, timestamp);
     }
 }

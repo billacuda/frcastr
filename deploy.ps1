@@ -12,8 +12,8 @@
       5. Builds and publishes the web project
       6. Stops the IIS app pool
       7. Applies any pending EF Core migrations
-      8. Copies published files to the IIS site, preserving setup-generated.json
-         and appsettings.Production.json
+      8. Copies published files to the IIS site, preserving setup-generated.json,
+         appsettings.Production.json, uploads\ and data-protection-keys\
       9. Starts the IIS app pool (always, even on failure)
 
     Must be run as Administrator (required for IIS management).
@@ -213,11 +213,16 @@ try {
         New-Item -ItemType Directory -Path $DestinationPath -Force | Out-Null
     }
 
+    # /MIR mirrors: anything in the destination that is not in the publish output is deleted.
+    # data-protection-keys holds the key ring the app encrypts auth cookies with — and, in time,
+    # stored data source secrets. Wiping it on deploy signed everyone out; once anything at rest
+    # depends on those keys it would destroy it outright. It is generated at runtime and never
+    # published, so it has to be excluded by name.
     $rcArgs = @(
         $PublishDir, $DestinationPath,
         '/MIR',
         '/XF', 'setup-generated.json', 'appsettings.Production.json',
-        '/XD', 'uploads',
+        '/XD', 'uploads', 'data-protection-keys',
         '/NFL', '/NDL', '/NJH', '/NJS', '/NC', '/NS'
     )
     robocopy @rcArgs

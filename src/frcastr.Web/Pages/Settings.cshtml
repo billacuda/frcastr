@@ -264,7 +264,7 @@ async function uploadLogo(input) {
     if (!input.files || !input.files[0]) return;
     const form = new FormData();
     form.append('file', input.files[0]);
-    const r = await fetch('/api/admin/branding/logo', { method: 'POST', body: form });
+    const r = await csrfFetch('/api/admin/branding/logo', { method: 'POST', body: form });
     if (r.ok) {
         const data = await r.json();
         const placeholder = document.getElementById('logoPreviewPlaceholder');
@@ -286,7 +286,7 @@ async function uploadLogo(input) {
 
 async function removeLogo() {
     if (!confirm('Remove the navbar logo?')) return;
-    const r = await fetch('/api/admin/branding/logo', { method: 'DELETE' });
+    const r = await csrfFetch('/api/admin/branding/logo', { method: 'DELETE' });
     if (r.ok) location.reload();
     else alert('Could not remove logo.');
 }
@@ -298,7 +298,7 @@ async function saveSection(colId) {
     const promises = Array.from(inputs).map(el => {
         const key = el.dataset.settingKey;
         const value = el.type === 'checkbox' ? el.checked.toString() : el.value;
-        return fetch('/api/settings', {
+        return csrfFetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key, value })

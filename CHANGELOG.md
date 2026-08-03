@@ -2,6 +2,111 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.10.0] - 2026-08-03
+
+### Fixed
+- **Hourly and daily aggregates were built from a sliver of their bucket, and the rest of the raw
+  readings were deleted unaggregated.** Both aggregation services took their retention cutoff as
+  `UtcNow.AddDays(-retention)` — an instant landing mid-hour — but grouped readings into whole-hour
+  buckets and then pruned everything before that instant. The hourly service runs at two minutes
+  past, so the boundary bucket was written from its first two minutes, its readings were deleted,
+  and on the next run the remaining fifty-eight minutes were grouped into that same bucket, skipped
+  by the dedup because a row already existed, and deleted too. Every hourly average, minimum and
+  maximum older than the raw retention window stood on roughly two minutes of a sixty-minute hour;
+  the daily rollup lost the same way, a day at a time. Both cutoffs now snap down to a bucket
+  boundary, so a partial bucket is never aggregated or pruned.
+  - A unique index on `(ChannelName, SourceId, DeviceId, Granularity, PeriodStart)` now backs the
+    application-level dedup, turning any recurrence into a failed transaction rather than silent
+    loss. The migration de-duplicates existing rows first — keeping whichever covers the most
+    readings — because migrations run at startup and a bare index creation against an already
+    affected database would refuse to boot the app.
+  - Neither service groups by `Unit` any more. A source spelling a unit two ways within one bucket
+    used to split it in two, which the new index would reject outright.
+  - This repairs the mechanism, not the history. Aggregates already written from partial buckets
+    stay as they are; raw readings still inside the retention window are untouched.
+- **Weather alerts never displayed.** `/api/weather/alerts` returned a hardcoded `null`, so the
+  widget showed "No active alerts" regardless of what the refresh service had stored. It now serves
+  the most recent unexpired `AlertCache` row.
+- **A sensor that died before a restart never went stale.** The staleness tracker is in-memory and
+  began empty on boot, and an entry only appears when a reading arrives — which for a dead sensor
+  never happens, so its tile showed a last-known value indefinitely with no warning. Startup now
+  primes the tracker from the latest stored reading per channel and device.
+- **A device's offline threshold only governed the alert email, not the dashboard.** The stale
+  marker read the station-wide setting, so a duty-cycled sensor — an ESP32 waking every five
+  minutes — was flagged between every pair of readings no matter what its own threshold said.
+- **Trends mixed sensors together.** A bare channel key matched every device reporting that
+  channel, so on a station with two sensors on one canonical channel the sample window interleaved
+  them and newest-minus-oldest compared different thermometers. A bare key now means the station's
+  view — sourceless readings plus the primary device's — matching what current conditions publish
+  under the same key.
+- **Current conditions grouped the entire readings table** on every cache miss, every fifteen
+  seconds. The scan is now bounded to a recent window.
+
+### Changed
+- **Purging history recalculates the all-time records it invalidates.** A record whose high or low
+  was set inside the purged range used to keep standing on a reading that no longer existed. Any
+  affected record is now recomputed from what survived — across both raw readings and aggregates,
+  since once raw rows age out an aggregate is the only remaining evidence of an extreme — and one
+  with nothing left behind it is deleted rather than left holding a number no data supports. The
+  **All-time records** checkbox now means "delete the rows outright"; leaving it off keeps them and
+  recalculates. Preview reports how many will be reset, and the result and the audit entry report
+  how many were recalculated and how many were cleared.
+  - A record that lands on an aggregate can only be dated to that bucket's start — the exact minute
+    went with the raw rows.
+- **The purge takes a date range and a sensor**, replacing the single "everything before a date"
+  cutoff. Both dates read as inclusive in the station's time zone and either may be left open, so
+  picking one day for both bounds purges exactly that day. Narrowing to one sensor leaves the
+  forecast and alert caches alone, since they are station-wide; combined with **Everything** it
+  erases one sensor's entire history and nothing else. An unbounded purge now has to be asked for
+  explicitly rather than falling out of a request that omitted its dates.
+- **MQTT messages and push batches write in one round trip.** All-time records were updated one
+  channel at a time, each with its own save, so a payload carrying temperature, humidity and
+  battery cost three read-modify-write cycles; a hundred-reading batch cost two hundred.
+- **Push ingest can attribute readings to a device** via an optional `device` key naming an already
+  registered Device ID. Unlike MQTT it does not auto-register — a push source is authenticated by a
+  shared key, so a typo is reported back rather than silently creating a device. Readings without
+  the key stay station-wide, which is what existing clients send.
+
+### Security
+- **CSRF protection across the JSON APIs.** Every non-GET action on every controller now validates
+  an antiforgery token; the API-key ingest routes opt out, having no session to forge against. A
+  rejected token returns an explanation rather than an empty 400, since a stale one is the ordinary
+  result of leaving a tab open past a session rollover.
+- **Sensor names are escaped in the purge results.** They are auto-registered from MQTT topic
+  segments — attacker-influenced text arriving on the broker, not something an admin typed.
+- **SVG logo uploads are rejected.** `/uploads` is served same-origin, so an SVG logo is a stored
+  script that runs when its URL is opened. Uploads are now capped at 5 MB, checked against the
+  leading bytes of the format they claim, and clear any previous logo — including an `.svg` left by
+  an older build. `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy` are set ahead
+  of the static file handlers.
+- **Data source secrets are no longer rendered into the page.** The Data Sources table embedded each
+  source's full config — the MQTT broker password and every upstream API key — in a `data-source`
+  attribute on every row. Neither the table nor the list endpoint carries it now; the edit form
+  fetches it when opened.
+- **History, export and monthly data are bounded and rate limited.** All three are anonymous, and
+  `period=year` could ask the server to materialise every row the station holds, with export
+  additionally buffering it all as a string. Each storage tier is now capped in SQL, and the bulk
+  endpoints get their own window separate from the global limit.
+- **The OpenAPI document requires an administrator** in production, matching the Scalar UI in front
+  of it.
+- **Deploys no longer wipe the Data Protection key ring.** `deploy.ps1` mirrors the publish output
+  with `robocopy /MIR`, which deleted `data-protection-keys` because it is generated at runtime and
+  never published — signing every user out on each deploy. It is now excluded alongside `uploads`.
+- **The session timeout survives a configuration reload.** `Auth.SessionTimeoutHours` was applied by
+  mutating the cookie options instance held at startup, and `setup-generated.json` is registered
+  with `reloadOnChange`, so any reload rebuilt those options and silently reverted to the 30-day
+  sliding default. It is a post-configure hook now.
+- **Unhandled exceptions render the error page.** Neither `UseExceptionHandler` nor
+  `UseStatusCodePages` was registered, so `Pages/Error` was unreachable and production returned a
+  bare 500 with an empty body.
+
+### ESP32 firmware
+- The deep-sleep entry point is marked `[[noreturn]]`, so the path after a failed sensor read is
+  provably unreachable rather than resting on the compiler inlining three frames to see it.
+- The README notes that a device's offline threshold now governs the dashboard's stale marker as
+  well as the alert email — which is what lets a five-minute duty cycle stop being flagged between
+  readings.
+
 ## [0.9.0] - 2026-07-31
 
 ### Added

@@ -119,7 +119,7 @@ function openAddModal() {
 async function createUser() {
     const roles = Array.from(document.querySelectorAll('.new-role-cb:checked')).map(cb => cb.value);
     const body = { email: document.getElementById('newEmail').value, password: document.getElementById('newPw').value, roles };
-    const r = await fetch('/api/admin/users', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const r = await csrfFetch('/api/admin/users', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     if (r.ok) { location.reload(); } else {
         const errs = await r.json().catch(() => null);
         alert('Error: ' + (Array.isArray(errs) ? errs.join('\n') : await r.text()));
@@ -137,7 +137,7 @@ function openRolesModal(uid) {
 async function saveRoles() {
     const uid = document.getElementById('rolesUserId').value;
     const roles = Array.from(document.querySelectorAll('.role-cb:checked')).map(cb => cb.value);
-    await fetch('/api/admin/users/' + uid + '/roles', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ roles }) });
+    await csrfFetch('/api/admin/users/' + uid + '/roles', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ roles }) });
     location.reload();
 }
 
@@ -150,14 +150,14 @@ function openResetModal(uid) {
 async function doReset() {
     const uid = document.getElementById('resetUserId').value;
     const newPassword = document.getElementById('newResetPw').value;
-    const r = await fetch('/api/admin/users/' + uid + '/reset-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newPassword }) });
+    const r = await csrfFetch('/api/admin/users/' + uid + '/reset-password', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ newPassword }) });
     if (r.ok) { bootstrap.Modal.getInstance(document.getElementById('resetModal')).hide(); alert('Password reset.'); }
     else { alert('Error: ' + await r.text()); }
 }
 
 async function deleteUser(uid, email) {
     if (!confirm('Delete user ' + email + '?')) return;
-    const r = await fetch('/api/admin/users/' + uid, { method: 'DELETE' });
+    const r = await csrfFetch('/api/admin/users/' + uid, { method: 'DELETE' });
     if (r.ok) { location.reload(); } else { alert('Error: ' + await r.text()); }
 }
 </script>

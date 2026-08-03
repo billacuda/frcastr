@@ -447,16 +447,24 @@ public class AdminController(
     [HttpPost("data/purge/preview")]
     public async Task<IActionResult> PreviewPurge([FromBody] PurgeDto dto, CancellationToken ct)
     {
-        var cutoff = await ResolvePurgeCutoffAsync(dto, ct);
-        var q = BuildPurgeQueries(dto, cutoff);
+        if (ValidatePurge(dto) is { } invalid) return BadRequest(invalid);
+
+        var device = await ResolvePurgeDeviceAsync(dto, ct);
+        if (dto.DeviceId is not null && device is null) return BadRequest("Unknown sensor.");
+
+        var window = await ResolvePurgeWindowAsync(dto, ct);
+        var q = BuildPurgeQueries(dto, window);
 
         return Ok(new
         {
-            before          = cutoff,
+            from            = window.From,
+            to              = window.To,
+            device          = device?.Name,
             readings        = q.Readings is null ? 0 : await q.Readings.CountAsync(ct),
             hourlyAggregates = q.Hourly is null ? 0 : await q.Hourly.CountAsync(ct),
             dailyAggregates = q.Daily is null ? 0 : await q.Daily.CountAsync(ct),
             records         = q.Records is null ? 0 : await q.Records.CountAsync(ct),
+            recordsReset    = await CountRecordsToResetAsync(dto, window, ct),
             forecastCache   = q.Forecasts is null ? 0 : await q.Forecasts.CountAsync(ct),
             alertCache      = q.Alerts is null ? 0 : await q.Alerts.CountAsync(ct)
         });
@@ -470,11 +478,13 @@ public class AdminController(
     [HttpPost("data/purge")]
     public async Task<IActionResult> PurgeData([FromBody] PurgeDto dto, CancellationToken ct)
     {
-        if (!dto.Readings && !dto.Aggregates && !dto.Records && !dto.Caches)
-            return BadRequest("Select at least one kind of data to purge.");
+        if (ValidatePurge(dto) is { } invalid) return BadRequest(invalid);
 
-        var cutoff = await ResolvePurgeCutoffAsync(dto, ct);
-        var q = BuildPurgeQueries(dto, cutoff);
+        var device = await ResolvePurgeDeviceAsync(dto, ct);
+        if (dto.DeviceId is not null && device is null) return BadRequest("Unknown sensor.");
+
+        var window = await ResolvePurgeWindowAsync(dto, ct);
+        var q = BuildPurgeQueries(dto, window);
 
         var readings  = await DeleteInBatchesAsync(q.Readings, ct);
         var hourly    = await DeleteInBatchesAsync(q.Hourly, ct);
@@ -483,26 +493,35 @@ public class AdminController(
         var forecasts = await DeleteInBatchesAsync(q.Forecasts, ct);
         var alerts    = await DeleteInBatchesAsync(q.Alerts, ct);
 
+        // An all-time high set by a reading that no longer exists is a number with nothing behind
+        // it. Run this after the deletes so the recalculation sees only what survived.
+        var (recordsReset, recordsCleared) = await ResetRecordsAsync(dto, window, ct);
+
         // Current conditions and daily extremes are output-cached for 15 s and would keep serving
         // numbers backed by rows that no longer exist.
         var invalidator = HttpContext.RequestServices.GetService<IWeatherCacheInvalidator>();
         if (invalidator is not null) await invalidator.InvalidateCurrentAsync(ct);
 
-        var scope = cutoff is null ? "everything" : $"before {cutoff:u}";
         await audit.LogAsync("Data.Purged",
             userId: UserId(), userName: UserName(),
             entityType: "Data", entityName: "Weather history",
-            newValue: $"{scope}: {readings} readings, {hourly} hourly, {daily} daily, " +
-                      $"{records} records, {forecasts} forecast cache, {alerts} alert cache",
+            newValue: $"{DescribeScope(window, device)}: {readings} readings, {hourly} hourly, " +
+                      $"{daily} daily, {records} records deleted, {recordsReset} records " +
+                      $"recalculated ({recordsCleared} cleared), {forecasts} forecast cache, " +
+                      $"{alerts} alert cache",
             ct: ct);
 
         return Ok(new
         {
-            before           = cutoff,
+            from             = window.From,
+            to               = window.To,
+            device           = device?.Name,
             readings,
             hourlyAggregates = hourly,
             dailyAggregates  = daily,
             records,
+            recordsReset,
+            recordsCleared,
             forecastCache    = forecasts,
             alertCache       = alerts
         });
@@ -516,56 +535,234 @@ public class AdminController(
         IQueryable<ForecastCache>? Forecasts,
         IQueryable<AlertCache>? Alerts);
 
+    /// <summary>Half-open UTC window a purge applies to. Null on either end is unbounded.</summary>
+    private sealed record PurgeWindow(DateTime? From, DateTime? To);
+
     /// <summary>
-    /// A null cutoff means "everything"; otherwise rows at or after the cutoff are kept. The date
-    /// arrives as a local station date, matching what the admin picked on screen.
+    /// Null when the request is usable, otherwise why it is not. An unbounded purge has to be asked
+    /// for outright: a request carrying neither date is far more likely to be a caller that forgot
+    /// to send them than an admin meaning to erase every reading the station has.
     /// </summary>
-    private async Task<DateTime?> ResolvePurgeCutoffAsync(PurgeDto dto, CancellationToken ct)
+    private static string? ValidatePurge(PurgeDto dto)
     {
-        if (dto.Before is null) return null;
+        if (!dto.Readings && !dto.Aggregates && !dto.Records && !dto.Caches)
+            return "Select at least one kind of data to purge.";
+
+        if (!dto.Everything && dto.From is null && dto.To is null)
+            return "Choose a from or to date, or ask for everything explicitly.";
+
+        if (dto.From is not null && dto.To is not null && dto.To.Value.Date < dto.From.Value.Date)
+            return "The to date cannot be earlier than the from date.";
+
+        return null;
+    }
+
+    private async Task<Device?> ResolvePurgeDeviceAsync(PurgeDto dto, CancellationToken ct)
+        => dto.DeviceId is null
+            ? null
+            : await db.Devices.FirstOrDefaultAsync(d => d.Id == dto.DeviceId, ct);
+
+    /// <summary>
+    /// Turns the admin's station-local dates into a half-open UTC window. Both dates read as
+    /// inclusive on screen, so the To date resolves to the *following* local midnight — picking one
+    /// day for both bounds purges exactly that day, which is what a sensor test run needs.
+    /// </summary>
+    private async Task<PurgeWindow> ResolvePurgeWindowAsync(PurgeDto dto, CancellationToken ct)
+    {
+        if (dto.Everything) return new PurgeWindow(null, null);
 
         var tzId = await settings.GetAsync("Station.TimeZone", ct);
         var tz = tzId is not null ? TimeZoneInfo.FindSystemTimeZoneById(tzId) : TimeZoneInfo.Local;
-        var localMidnight = new DateTime(dto.Before.Value.Year, dto.Before.Value.Month,
-            dto.Before.Value.Day, 0, 0, 0, DateTimeKind.Unspecified);
-        return TimeZoneInfo.ConvertTimeToUtc(localMidnight, tz);
+
+        return new PurgeWindow(
+            dto.From is null ? null : LocalDateToUtc(dto.From.Value, addDays: 0, tz),
+            dto.To   is null ? null : LocalDateToUtc(dto.To.Value,   addDays: 1, tz));
     }
 
-    private PurgeQueries BuildPurgeQueries(PurgeDto dto, DateTime? cutoff)
+    private static DateTime LocalDateToUtc(DateTime localDate, int addDays, TimeZoneInfo tz)
     {
+        var midnight = new DateTime(localDate.Year, localDate.Month, localDate.Day,
+            0, 0, 0, DateTimeKind.Unspecified).AddDays(addDays);
+        return TimeZoneInfo.ConvertTimeToUtc(midnight, tz);
+    }
+
+    private static string DescribeScope(PurgeWindow window, Device? device)
+    {
+        var range = (window.From, window.To) switch
+        {
+            (null, null)         => "everything",
+            (not null, null)     => $"from {window.From:u}",
+            (null, not null)     => $"before {window.To:u}",
+            _                    => $"from {window.From:u} to {window.To:u}"
+        };
+        return device is null ? range : $"{range} for sensor {device.Name}";
+    }
+
+    private PurgeQueries BuildPurgeQueries(PurgeDto dto, PurgeWindow window)
+    {
+        // Locals rather than property access so EF captures plain values in the expression trees.
+        var from = window.From;
+        var to = window.To;
+        var deviceId = dto.DeviceId;
+
         var readings = dto.Readings
-            ? db.WeatherReadings.Where(r => cutoff == null || r.Timestamp < cutoff)
+            ? db.WeatherReadings
+                .Where(r => deviceId == null || r.DeviceId == deviceId)
+                .Where(r => (from == null || r.Timestamp >= from) && (to == null || r.Timestamp < to))
             : null;
 
         var hourly = dto.Aggregates
             ? db.WeatherReadingAggregates
                 .Where(a => a.Granularity == AggregationGranularity.Hourly)
-                .Where(a => cutoff == null || a.PeriodStart < cutoff)
+                .Where(a => deviceId == null || a.DeviceId == deviceId)
+                .Where(a => (from == null || a.PeriodStart >= from) && (to == null || a.PeriodStart < to))
             : null;
 
         var daily = dto.Aggregates
             ? db.WeatherReadingAggregates
                 .Where(a => a.Granularity == AggregationGranularity.Daily)
-                .Where(a => cutoff == null || a.PeriodStart < cutoff)
+                .Where(a => deviceId == null || a.DeviceId == deviceId)
+                .Where(a => (from == null || a.PeriodStart >= from) && (to == null || a.PeriodStart < to))
             : null;
 
-        // A record carries two timestamps rather than one. Under a date cutoff it only goes when
-        // both extremes predate it — a record still anchored by a surviving reading is kept.
+        // A record carries two timestamps rather than one. It only goes when both extremes fall
+        // inside the window — a record still anchored by a surviving reading is kept.
         var records = dto.Records
             ? db.WeatherChannelRecords
-                .Where(r => cutoff == null || (r.AllTimeMaxAt < cutoff && r.AllTimeMinAt < cutoff))
+                .Where(r => deviceId == null || r.DeviceId == deviceId)
+                .Where(r => (from == null || (r.AllTimeMaxAt >= from && r.AllTimeMinAt >= from))
+                         && (to   == null || (r.AllTimeMaxAt <  to   && r.AllTimeMinAt <  to)))
             : null;
 
-        var forecasts = dto.Caches
-            ? db.ForecastCaches.Where(f => cutoff == null || f.FetchedAt < cutoff)
+        // The caches are station-wide and carry no device column, so a purge aimed at one sensor
+        // leaves them alone rather than silently clearing forecasts for the whole station.
+        var forecasts = dto.Caches && deviceId is null
+            ? db.ForecastCaches.Where(f => (from == null || f.FetchedAt >= from) && (to == null || f.FetchedAt < to))
             : null;
 
-        var alerts = dto.Caches
-            ? db.AlertCaches.Where(a => cutoff == null || a.FetchedAt < cutoff)
+        var alerts = dto.Caches && deviceId is null
+            ? db.AlertCaches.Where(a => (from == null || a.FetchedAt >= from) && (to == null || a.FetchedAt < to))
             : null;
 
         return new PurgeQueries(readings, hourly, daily, records, forecasts, alerts);
     }
+
+    // ── All-time records after a purge ────────────────────────────────────────
+
+    /// <summary>
+    /// Records whose all-time high or low was set inside the purged window. Their extreme is about
+    /// to lose the reading that produced it, so it has to be recalculated from what survives.
+    /// Records the purge deletes outright are excluded — they are counted under <c>records</c>.
+    /// </summary>
+    private IQueryable<WeatherChannelRecord>? BuildRecordsToResetQuery(PurgeDto dto, PurgeWindow window)
+    {
+        // Only a purge that removes measurements can invalidate a record. Caches carry none.
+        if (!dto.Readings && !dto.Aggregates) return null;
+
+        var from = window.From;
+        var to = window.To;
+        var deviceId = dto.DeviceId;
+        var deletingRecords = dto.Records;
+
+        return db.WeatherChannelRecords
+            .Where(r => deviceId == null || r.DeviceId == deviceId)
+            // Either extreme inside the window is enough; the recalculation redoes whichever ones
+            // no longer have data behind them.
+            .Where(r => (from == null || r.AllTimeMaxAt >= from) && (to == null || r.AllTimeMaxAt < to)
+                     || (from == null || r.AllTimeMinAt >= from) && (to == null || r.AllTimeMinAt < to))
+            .Where(r => !deletingRecords
+                     || !((from == null || (r.AllTimeMaxAt >= from && r.AllTimeMinAt >= from))
+                       && (to   == null || (r.AllTimeMaxAt <  to   && r.AllTimeMinAt <  to))));
+    }
+
+    private async Task<int> CountRecordsToResetAsync(PurgeDto dto, PurgeWindow window, CancellationToken ct)
+    {
+        var q = BuildRecordsToResetQuery(dto, window);
+        return q is null ? 0 : await q.CountAsync(ct);
+    }
+
+    /// <summary>
+    /// Recalculates every all-time record the purge invalidated, from the readings and aggregates
+    /// that survived it. A record with nothing left behind it is deleted rather than left holding a
+    /// number no data supports.
+    /// </summary>
+    /// <returns>How many records were recalculated, and how many of those were cleared entirely.</returns>
+    private async Task<(int Reset, int Cleared)> ResetRecordsAsync(
+        PurgeDto dto, PurgeWindow window, CancellationToken ct)
+    {
+        var q = BuildRecordsToResetQuery(dto, window);
+        if (q is null) return (0, 0);
+
+        var candidates = await q.ToListAsync(ct);
+        if (candidates.Count == 0) return (0, 0);
+
+        var cleared = 0;
+        foreach (var record in candidates)
+        {
+            var max = await FindExtremeAsync(record.ChannelName, record.DeviceId, highest: true, ct);
+            var min = await FindExtremeAsync(record.ChannelName, record.DeviceId, highest: false, ct);
+
+            if (max is null || min is null)
+            {
+                db.WeatherChannelRecords.Remove(record);
+                cleared++;
+                continue;
+            }
+
+            record.AllTimeMax = max.Value;
+            record.AllTimeMaxAt = max.At;
+            record.AllTimeMaxSourceId = max.SourceId;
+            record.AllTimeMin = min.Value;
+            record.AllTimeMinAt = min.At;
+            record.AllTimeMinSourceId = min.SourceId;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return (candidates.Count, cleared);
+    }
+
+    /// <summary>
+    /// The surviving high (or low) for a channel on a device, across both raw readings and rolled-up
+    /// aggregates. Once raw readings age out, an aggregate is the only remaining evidence of an
+    /// extreme, so ignoring them would walk records back to whatever the retention window still
+    /// holds. An aggregate can only date the extreme to the start of its bucket — the exact minute
+    /// went with the raw rows — which is the best available answer and still beats a stale one.
+    /// </summary>
+    private async Task<RecordExtreme?> FindExtremeAsync(
+        string channel, int? deviceId, bool highest, CancellationToken ct)
+    {
+        // Written as two branches because EF renders `DeviceId == @p` with a null parameter as
+        // `= NULL`, which matches no row — a station-wide record would silently find nothing.
+        var readings = deviceId is null
+            ? db.WeatherReadings.Where(r => r.ChannelName == channel && r.DeviceId == null)
+            : db.WeatherReadings.Where(r => r.ChannelName == channel && r.DeviceId == deviceId);
+
+        var aggregates = deviceId is null
+            ? db.WeatherReadingAggregates.Where(a => a.ChannelName == channel && a.DeviceId == null)
+            : db.WeatherReadingAggregates.Where(a => a.ChannelName == channel && a.DeviceId == deviceId);
+
+        var fromReadings = await (highest
+                ? readings.OrderByDescending(r => r.Value).ThenBy(r => r.Timestamp)
+                : readings.OrderBy(r => r.Value).ThenBy(r => r.Timestamp))
+            .Select(r => new RecordExtreme(r.Value, r.Timestamp, r.SourceId))
+            .FirstOrDefaultAsync(ct);
+
+        var fromAggregates = await (highest
+                ? aggregates.OrderByDescending(a => a.Max).ThenBy(a => a.PeriodStart)
+                    .Select(a => new RecordExtreme(a.Max, a.PeriodStart, a.SourceId))
+                : aggregates.OrderBy(a => a.Min).ThenBy(a => a.PeriodStart)
+                    .Select(a => new RecordExtreme(a.Min, a.PeriodStart, a.SourceId)))
+            .FirstOrDefaultAsync(ct);
+
+        if (fromReadings is null) return fromAggregates;
+        if (fromAggregates is null) return fromReadings;
+
+        return highest
+            ? (fromAggregates.Value > fromReadings.Value ? fromAggregates : fromReadings)
+            : (fromAggregates.Value < fromReadings.Value ? fromAggregates : fromReadings);
+    }
+
+    private sealed record RecordExtreme(decimal Value, DateTime At, int? SourceId);
 
     /// <summary>
     /// Deletes in chunks. A year of raw readings runs to millions of rows, and a single unbounded
@@ -588,9 +785,34 @@ public class AdminController(
 
     // ── Data Sources ──────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Data sources without their Config. That blob holds the MQTT broker password and every
+    /// upstream API key in plaintext, and a list endpoint is the wrong place for it — callers that
+    /// genuinely need it ask for one source's config explicitly, below.
+    /// </summary>
     [HttpGet("datasources")]
     public async Task<IActionResult> GetDataSources(CancellationToken ct)
-        => Ok(await db.DataSources.OrderBy(s => s.Name).ToListAsync(ct));
+        => Ok(await db.DataSources
+            .OrderBy(s => s.Name)
+            .Select(s => new
+            {
+                s.Id, s.Name, s.Type, s.Url, s.IsEnabled, s.PollIntervalSeconds,
+                s.LastPolledAt, s.LastError, s.CreatedAt,
+                HasConfig = s.Config != null && s.Config != ""
+            })
+            .ToListAsync(ct));
+
+    /// <summary>One source's raw Config, for the edit form. Secrets in, secrets out.</summary>
+    [HttpGet("datasources/{id:int}/config")]
+    public async Task<IActionResult> GetDataSourceConfig(int id, CancellationToken ct)
+    {
+        var config = await db.DataSources
+            .Where(s => s.Id == id)
+            .Select(s => new { s.Config })
+            .FirstOrDefaultAsync(ct);
+
+        return config is null ? NotFound() : Ok(new { config = config.Config });
+    }
 
     [HttpPost("datasources")]
     public async Task<IActionResult> CreateDataSource([FromBody] DataSourceDto dto, CancellationToken ct)
@@ -746,16 +968,36 @@ public class AdminController(
         if (file is null || file.Length == 0) return BadRequest("No file provided.");
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp" };
-        if (!allowed.Contains(ext)) return BadRequest("Invalid file type.");
+        // SVG is deliberately absent. It is a script-bearing document, and /uploads is served
+        // same-origin, so an SVG logo is a stored script that runs the moment anyone opens its URL.
+        // The raster formats below cannot carry executable content.
+        var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
+        if (!allowed.Contains(ext))
+            return BadRequest("Invalid file type. Use PNG, JPEG, GIF or WebP.");
+
+        const long maxBytes = 5 * 1024 * 1024;
+        if (file.Length > maxBytes) return BadRequest("Logo must be 5 MB or smaller.");
+
+        if (!await LooksLikeImageAsync(file, ext, ct))
+            return BadRequest("That file is not a valid image.");
 
         var uploadsDir = Path.Combine(webEnv.ContentRootPath, "uploads");
         Directory.CreateDirectory(uploadsDir);
 
+        // Clear any previous logo first. The name carries the extension, so uploading a PNG over a
+        // GIF used to leave the GIF behind — and any .svg left by an older build stayed reachable
+        // at its URL even though the format is no longer accepted.
+        foreach (var stale in Directory.EnumerateFiles(uploadsDir, "logo.*"))
+        {
+            try { System.IO.File.Delete(stale); } catch (IOException) { /* in use; overwritten below if same name */ }
+        }
+
         var fileName = "logo" + ext;
         var filePath = Path.Combine(uploadsDir, fileName);
-        await using var stream = System.IO.File.Create(filePath);
-        await file.CopyToAsync(stream, ct);
+        await using (var stream = System.IO.File.Create(filePath))
+        {
+            await file.CopyToAsync(stream, ct);
+        }
 
         var logoUrl = "/uploads/" + fileName;
         await settings.UpsertAsync("Branding.Logo", logoUrl, modifiedBy: UserName(), ct: ct);
@@ -767,14 +1009,49 @@ public class AdminController(
         return Ok(new { url = logoUrl });
     }
 
+    /// <summary>
+    /// Rejects anything whose leading bytes are not one of the accepted raster formats, so a file
+    /// cannot get in on a renamed extension alone.
+    /// </summary>
+    private static async Task<bool> LooksLikeImageAsync(IFormFile file, string ext, CancellationToken ct)
+    {
+        var header = new byte[12];
+        await using var probe = file.OpenReadStream();
+        var read = await probe.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, ct);
+        if (read < header.Length) return false;
+
+        bool Starts(params byte[] magic) => header.AsSpan(0, magic.Length).SequenceEqual(magic);
+
+        return ext switch
+        {
+            ".png"  => Starts(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
+            ".jpg" or ".jpeg" => Starts(0xFF, 0xD8, 0xFF),
+            ".gif"  => Starts((byte)'G', (byte)'I', (byte)'F', (byte)'8'),
+            // "RIFF" .... "WEBP"
+            ".webp" => Starts((byte)'R', (byte)'I', (byte)'F', (byte)'F') &&
+                       header.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+            _       => false
+        };
+    }
+
     [HttpDelete("branding/logo")]
     public async Task<IActionResult> DeleteLogo(CancellationToken ct)
     {
         var logoUrl = await settings.GetAsync("Branding.Logo", ct);
         if (!string.IsNullOrEmpty(logoUrl))
         {
-            var filePath = Path.Combine(webEnv.ContentRootPath, logoUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-            if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+            // Resolved and range-checked rather than concatenated: the stored value is only ever
+            // written by the upload above, but a path that escapes the uploads directory must not
+            // be reachable even if that ever stops being true.
+            var uploadsDir = Path.GetFullPath(Path.Combine(webEnv.ContentRootPath, "uploads"));
+            var candidate = Path.GetFullPath(Path.Combine(
+                webEnv.ContentRootPath, logoUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
+
+            if (candidate.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+                System.IO.File.Exists(candidate))
+            {
+                System.IO.File.Delete(candidate);
+            }
         }
         await settings.UpsertAsync("Branding.Logo", "", modifiedBy: UserName(), ct: ct);
         return NoContent();
@@ -1061,11 +1338,16 @@ public class AdminController(
     public record ChannelRekeyDto(string From, string To);
 
     /// <summary>
-    /// What a purge should remove. <paramref name="Before"/> is a local station date; null purges
-    /// everything in the selected stores.
+    /// What a purge should remove.
+    /// <paramref name="From"/> and <paramref name="To"/> are station-local dates, both inclusive;
+    /// either may be null for an open end. <paramref name="DeviceId"/> narrows the purge to one
+    /// sensor. <paramref name="Everything"/> is the explicit opt-in to an unbounded purge.
     /// </summary>
     public record PurgeDto(
-        DateTime? Before,
+        DateTime? From,
+        DateTime? To,
+        int? DeviceId,
+        bool Everything,
         bool Readings,
         bool Aggregates,
         bool Records,

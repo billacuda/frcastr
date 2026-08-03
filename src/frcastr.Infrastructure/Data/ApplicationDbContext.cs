@@ -90,6 +90,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             e.HasIndex(a => new { a.ChannelName, a.Granularity, a.PeriodStart });
             e.HasIndex(a => a.SourceId);
             e.HasIndex(a => new { a.DeviceId, a.ChannelName, a.Granularity, a.PeriodStart });
+            // One row per bucket, matching the key the aggregation services dedup on. That dedup
+            // silently skipping a row used to mean the raw readings behind it were deleted without
+            // ever being rolled up; this turns any recurrence into a failed transaction instead of
+            // missing history. Source is part of the key because two pull sources can legitimately
+            // report the same channel for the same hour. HasFilter(null) for the same reason as
+            // WeatherChannelRecord below: a station-wide row has a null DeviceId and must still be
+            // unique, which SQL Server's NULLs-compare-equal semantics give us only unfiltered.
+            e.HasIndex(a => new { a.ChannelName, a.SourceId, a.DeviceId, a.Granularity, a.PeriodStart })
+             .IsUnique().HasFilter(null);
             e.HasOne(a => a.Source).WithMany()
              .HasForeignKey(a => a.SourceId)
              .OnDelete(DeleteBehavior.Restrict);

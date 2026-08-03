@@ -12,10 +12,19 @@ public class DataModel(ApplicationDbContext db) : PageModel
     /// <summary>One row of the "what's stored" table.</summary>
     public record StoreSummary(string Name, string Description, int Rows, DateTime? Oldest, DateTime? Newest);
 
+    /// <summary>An entry in the purge form's sensor picker.</summary>
+    public record DeviceOption(int Id, string Name);
+
     public List<StoreSummary> Stores { get; private set; } = [];
+    public List<DeviceOption> Devices { get; private set; } = [];
 
     public async Task OnGetAsync(CancellationToken ct)
     {
+        Devices = await db.Devices
+            .OrderBy(d => d.Name)
+            .Select(d => new DeviceOption(d.Id, d.Name))
+            .ToListAsync(ct);
+
         // Counts and bounds only — the purge form should never be aimed at a database the admin
         // cannot see the shape of.
         var readings = db.WeatherReadings;

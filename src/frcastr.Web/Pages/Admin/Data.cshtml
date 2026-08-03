@@ -43,18 +43,45 @@
                 <div class="col-md-5">
                     <label class="form-label">Scope</label>
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="purgeScope" id="scopeBefore"
-                               value="before" checked onchange="onScopeChange()" />
-                        <label class="form-check-label" for="scopeBefore">Everything before a date</label>
+                        <input class="form-check-input" type="radio" name="purgeScope" id="scopeRange"
+                               value="range" checked onchange="onScopeChange()" />
+                        <label class="form-check-label" for="scopeRange">A date range</label>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="purgeScope" id="scopeAll"
                                value="all" onchange="onScopeChange()" />
                         <label class="form-check-label text-danger" for="scopeAll">Everything, all of it</label>
                     </div>
-                    <input type="date" class="form-control form-control-sm mt-2" id="purgeBefore"
-                           value="@DateTime.Today.AddMonths(-1).ToString("yyyy-MM-dd")" />
-                    <div class="form-text">Interpreted in the station's time zone. Readings from that date onward are kept.</div>
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label small mb-1" for="purgeFrom">From</label>
+                            <input type="date" class="form-control form-control-sm" id="purgeFrom"
+                                   value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1" for="purgeTo">To</label>
+                            <input type="date" class="form-control form-control-sm" id="purgeTo" />
+                        </div>
+                    </div>
+                    <div class="form-text">
+                        Station time zone, both dates included. Leave either blank for an open end —
+                        a From on its own deletes everything since that day.
+                    </div>
+
+                    <label class="form-label mt-3" for="purgeDevice">Sensor</label>
+                    <select class="form-select form-select-sm" id="purgeDevice">
+                        <option value="">All sensors</option>
+                        @foreach (var d in Model.Devices)
+                        {
+                            <option value="@d.Id">@d.Name</option>
+                        }
+                    </select>
+                    <div class="form-text">
+                        Narrowing to one sensor leaves the forecast and alert caches alone; they are
+                        station-wide and not attributable to a device. Combined with "Everything" it
+                        erases that sensor's entire history and nothing else.
+                    </div>
                 </div>
 
                 <div class="col-md-7">
@@ -76,9 +103,11 @@
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="incRecords" />
                         <label class="form-check-label" for="incRecords">
-                            All-time records
+                            Delete all-time records outright
                             <span class="small text-body-secondary d-block">
-                                Under a date cutoff, only records whose high and low both predate it.
+                                Only records whose high and low both fall inside the range. Leave this
+                                off and records are kept but recalculated — any high or low set inside
+                                the range is redone from the readings that survive, or cleared if none do.
                             </span>
                         </label>
                     </div>
@@ -103,9 +132,22 @@
 
 @section Scripts {
 <script>
+function isEverything() {
+    return document.querySelector('input[name="purgeScope"]:checked').value === 'all';
+}
+
+function escHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function onScopeChange() {
-    document.getElementById('purgeBefore').disabled =
-        document.querySelector('input[name="purgeScope"]:checked').value === 'all';
+    var off = isEverything();
+    document.getElementById('purgeFrom').disabled = off;
+    document.getElementById('purgeTo').disabled = off;
+    // The sensor picker stays live under "Everything" — that combination means every reading this
+    // one sensor ever took, which is exactly what removing a retired sensor needs.
 }
 
 function onConfirmInput() {
@@ -114,10 +156,15 @@ function onConfirmInput() {
 }
 
 function purgeBody() {
-    var all = document.querySelector('input[name="purgeScope"]:checked').value === 'all';
-    var date = document.getElementById('purgeBefore').value;
+    var all  = isEverything();
+    var from = document.getElementById('purgeFrom').value;
+    var to   = document.getElementById('purgeTo').value;
+    var dev  = document.getElementById('purgeDevice').value;
     return {
-        before:     all ? null : (date ? date + 'T00:00:00' : null),
+        from:       all || !from ? null : from + 'T00:00:00',
+        to:         all || !to   ? null : to   + 'T00:00:00',
+        deviceId:   dev ? parseInt(dev, 10) : null,
+        everything: all,
         readings:   document.getElementById('incReadings').checked,
         aggregates: document.getElementById('incAggregates').checked,
         records:    document.getElementById('incRecords').checked,
@@ -125,15 +172,39 @@ function purgeBody() {
     };
 }
 
+function scopeText(r) {
+    var range;
+    if (!r.from && !r.to)  range = 'No date limit — everything.';
+    else if (r.from && r.to) range = 'From ' + r.from + ' up to ' + r.to + ' (UTC)';
+    else if (r.from)         range = 'From ' + r.from + ' onward (UTC)';
+    else                     range = 'Before ' + r.to + ' (UTC)';
+    // Sensor names are auto-registered from MQTT topic segments, so they are attacker-controlled
+    // text arriving on the broker, not something an admin typed.
+    return range + ' · ' + (r.device ? 'sensor ' + escHtml(r.device) : 'all sensors');
+}
+
+// All-time highs and lows set inside the purged window lose the reading behind them, so they are
+// recalculated from what survives rather than left standing on deleted data.
+function recordsResetNote(r) {
+    if (!r.recordsReset) return '';
+    var note = r.recordsReset.toLocaleString() + ' all-time record' +
+        (r.recordsReset === 1 ? '' : 's') + ' recalculated from surviving data';
+    if (r.recordsCleared) {
+        note += ' (' + r.recordsCleared.toLocaleString() + ' cleared — nothing left on that channel)';
+    }
+    return '<div class="small mb-1">' + note + '.</div>';
+}
+
 function countsTable(r, title, cls) {
     var rows = [
         ['Raw readings', r.readings],
         ['Hourly aggregates', r.hourlyAggregates],
         ['Daily aggregates', r.dailyAggregates],
-        ['All-time records', r.records],
+        ['All-time records deleted', r.records],
         ['Forecast cache', r.forecastCache],
         ['Alert cache', r.alertCache]
     ];
+    // Recalculated records are not deletions, so they stay out of the total.
     var total = rows.reduce(function (sum, x) { return sum + x[1]; }, 0);
     return '<div class="alert ' + cls + ' mb-0">' +
         '<div class="fw-semibold mb-2">' + title + '</div>' +
@@ -142,20 +213,21 @@ function countsTable(r, title, cls) {
             return '<tr><td>' + x[0] + '</td><td class="text-end font-monospace">' +
                    x[1].toLocaleString() + '</td></tr>';
         }).join('') +
-        '<tr class="fw-semibold"><td>Total</td><td class="text-end font-monospace">' +
+        '<tr class="fw-semibold"><td>Total deleted</td><td class="text-end font-monospace">' +
         total.toLocaleString() + '</td></tr>' +
         '</tbody></table>' +
-        '<div class="small mb-0">' + (r.before ? 'Cutoff ' + r.before + ' (UTC)' : 'No cutoff — everything.') + '</div>' +
+        recordsResetNote(r) +
+        '<div class="small mb-0">' + scopeText(r) + '</div>' +
         '</div>';
 }
 
 async function previewPurge() {
     var el = document.getElementById('purgeResult');
     el.innerHTML = '<span class="text-body-secondary small">Counting…</span>';
-    var r = await fetch('/api/admin/data/purge/preview', {
+    var r = await csrfFetch('/api/admin/data/purge/preview', {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(purgeBody())
     });
-    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + (await r.text()) + '</div>'; return; }
+    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + escHtml(await r.text()) + '</div>'; return; }
     el.innerHTML = countsTable(await r.json(), 'This would delete:', 'alert-warning');
 }
 
@@ -163,10 +235,10 @@ async function runPurge() {
     if (!confirm('Delete this data permanently? There is no undo.')) return;
     var el = document.getElementById('purgeResult');
     el.innerHTML = '<span class="text-body-secondary small">Purging…</span>';
-    var r = await fetch('/api/admin/data/purge', {
+    var r = await csrfFetch('/api/admin/data/purge', {
         method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(purgeBody())
     });
-    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + (await r.text()) + '</div>'; return; }
+    if (!r.ok) { el.innerHTML = '<div class="alert alert-danger mb-0">' + escHtml(await r.text()) + '</div>'; return; }
     el.innerHTML = countsTable(await r.json(), 'Deleted:', 'alert-success');
     document.getElementById('purgeConfirm').value = '';
     onConfirmInput();

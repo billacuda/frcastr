@@ -46,7 +46,12 @@ public class DailyAggregationBackgroundService(
         var dailyRetentionDays = await settings.GetIntAsync("Weather.DailyRetentionDays", 0, ct);
         var recordRetentionDays = await settings.GetIntAsync("Records.RetentionDays", 0, ct);
 
-        var hourlyCutoff = DateTime.UtcNow.AddDays(-hourlyRetention);
+        // Snapped down to midnight for the same reason the hourly service snaps to the hour: the
+        // retention instant lands mid-day, and rolling up a partial day writes a daily row from the
+        // hours before it, deletes them, and then silently drops the remaining hours on later runs
+        // because the dedup below sees a row for that date already. Only whole days are rolled up.
+        var hourlyCutoff = DateTime.UtcNow.AddDays(-hourlyRetention).Date;
+        hourlyCutoff = DateTime.SpecifyKind(hourlyCutoff, DateTimeKind.Utc);
 
         // ── Aggregate hourly → daily ──────────────────────────────────────────
 
@@ -55,9 +60,12 @@ public class DailyAggregationBackgroundService(
         {
             var groups = await db.WeatherReadingAggregates
                 .Where(a => a.Granularity == AggregationGranularity.Hourly && a.PeriodStart < hourlyCutoff)
+                // Unit is not part of the key, for the same reason as in the hourly service: one
+                // bucket per (channel, source, device, day) is what the unique index enforces, and
+                // splitting on a unit spelling would fail the insert instead of tidying anything.
                 .GroupBy(a => new
                 {
-                    a.ChannelName, a.SourceId, a.DeviceId, a.Unit,
+                    a.ChannelName, a.SourceId, a.DeviceId,
                     Year = a.PeriodStart.Year,
                     Month = a.PeriodStart.Month,
                     Day = a.PeriodStart.Day
@@ -69,7 +77,8 @@ public class DailyAggregationBackgroundService(
                     WeightedSum = g.Sum(a => a.Avg * a.Count),
                     TotalCount = g.Sum(a => a.Count),
                     Min = g.Min(a => a.Min),
-                    Max = g.Max(a => a.Max)
+                    Max = g.Max(a => a.Max),
+                    Unit = g.Max(a => a.Unit)
                 })
                 .ToListAsync(ct);
 
@@ -84,7 +93,8 @@ public class DailyAggregationBackgroundService(
                 Min = g.Min,
                 Max = g.Max,
                 Count = g.TotalCount,
-                Unit = g.Key.Unit
+                // Non-null: Unit is a required column and a group always has at least one row.
+                Unit = g.Unit!
             }).ToList();
 
             // Dedup

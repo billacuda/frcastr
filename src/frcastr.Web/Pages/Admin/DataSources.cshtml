@@ -229,7 +229,7 @@ function openAddModal() {
     new bootstrap.Modal('#sourceModal').show();
 }
 
-function openEditModal(id) {
+async function openEditModal(id) {
     const row = document.getElementById('row-' + id);
     const s = JSON.parse(row.dataset.source);
     document.getElementById('sourceId').value = id;
@@ -239,11 +239,25 @@ function openEditModal(id) {
     document.getElementById('sourcePoll').value = s.pollIntervalSeconds;
     document.getElementById('sourceEnabled').checked = s.isEnabled;
     document.getElementById('sourceUrl').value = s.url ?? '';
-    document.getElementById('sourceConfig').value = s.config ? JSON.stringify(JSON.parse(s.config), null, 2) : '';
     document.getElementById('providerPreset').value = '';
+
+    // Config carries the broker password and any upstream API keys, so it is not part of the row
+    // data rendered into the page — it is fetched only when this form is actually opened.
+    const cfgEl = document.getElementById('sourceConfig');
+    cfgEl.value = '';
+    cfgEl.disabled = true;
     clearTestResult();
     onTypeChange();
     new bootstrap.Modal('#sourceModal').show();
+
+    try {
+        const r = await fetch('/api/admin/datasources/' + id + '/config');
+        if (r.ok) {
+            const cfg = (await r.json()).config;
+            cfgEl.value = cfg ? JSON.stringify(JSON.parse(cfg), null, 2) : '';
+        }
+    } catch (e) { /* leave the box empty; saving it blank clears the config */ }
+    cfgEl.disabled = false;
 }
 
 async function testSourceById(id, name) {
@@ -255,7 +269,7 @@ async function testSourceById(id, name) {
     modal.show();
 
     try {
-        const r = await fetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
+        const r = await csrfFetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
         const data = await r.json();
         document.getElementById('trSpinner').style.display = 'none';
         document.getElementById('trBadge').innerHTML = data.success
@@ -284,7 +298,7 @@ async function testSource() {
     resultRow.style.display = 'none';
 
     try {
-        const r = await fetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
+        const r = await csrfFetch('/api/admin/datasources/' + id + '/test', { method: 'POST' });
         const data = await r.json();
         resultRow.style.display = '';
         badge.innerHTML = data.success
@@ -339,7 +353,7 @@ async function deleteSource(id, name) {
 }
 
 async function rotateKey(id) {
-    const r = await fetch('/api/admin/datasources/' + id + '/rotate-key', { method: 'POST' });
+    const r = await csrfFetch('/api/admin/datasources/' + id + '/rotate-key', { method: 'POST' });
     if (!r.ok) { alert('Failed to rotate key'); return; }
     const data = await r.json();
     document.getElementById('newKeyDisplay').value = data.plainKey;

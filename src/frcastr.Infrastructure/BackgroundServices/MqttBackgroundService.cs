@@ -266,12 +266,11 @@ public class MqttBackgroundService(
         // One round-trip for every channel in the message.
         await db.SaveChangesAsync();
 
-        foreach (var (channel, value) in accepted)
-        {
+        foreach (var (channel, _) in accepted)
             statusService.RecordReading(channel, device?.Id);
-            await weatherData.UpdateChannelRecordAsync(channel, value, timestamp, managed.SourceId,
-                deviceId: device?.Id);
-        }
+
+        // One round trip for the whole message rather than one per channel.
+        await weatherData.UpdateChannelRecordsAsync(accepted, timestamp, managed.SourceId, device?.Id);
 
         // The dashboard's current-conditions response is cached for 15 s; without this the readings
         // that just arrived would not show up until it expired.

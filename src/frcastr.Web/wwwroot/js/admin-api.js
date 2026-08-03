@@ -39,7 +39,8 @@
 
         var response;
         try {
-            response = await fetch(url, init);
+            // csrfFetch, not fetch: the server rejects an untokenised mutating call. See csrf.js.
+            response = await csrfFetch(url, init);
         } catch (e) {
             // The network failed, or the app went away mid-request.
             alert('Request failed: ' + e);

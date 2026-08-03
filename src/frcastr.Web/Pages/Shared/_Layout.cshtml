@@ -1,10 +1,13 @@
 @inject Microsoft.Extensions.Configuration.IConfiguration Configuration
 @inject frcastr.Core.Interfaces.ISettingsService SettingsSvc
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="auto" id="htmlRoot">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* Read back by adminFetch, which sends it as X-CSRF-TOKEN on every mutating call. *@
+    <meta name="csrf-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
     <title>@ViewData["Title"] — @(Configuration["Branding:AppName"] ?? "frcastr")</title>
     <link rel="manifest" href="/manifest.json" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
@@ -107,6 +110,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gridstack@12/dist/gridstack-all.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+    @* First: everything below that mutates goes through csrfFetch. *@
+    <script src="~/js/csrf.js" asp-append-version="true"></script>
     <script src="~/js/theme.js" asp-append-version="true"></script>
     <script src="~/js/local-time.js" asp-append-version="true"></script>
     <script src="~/js/temp-unit.js" asp-append-version="true"></script>
