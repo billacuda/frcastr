@@ -38,7 +38,30 @@
         html += '<li><hr class="dropdown-divider"></li>' +
             '<li><a class="dropdown-item" href="#" id="newDashboardBtn">+ New Dashboard</a></li>';
 
+        // A phone-layout choice for the dashboard being viewed. Only shown where it can be acted
+        // on: the dashboard page (which is what defines frcastrConfig) and only to someone who
+        // may save layouts.
+        var cfg = window.frcastrConfig;
+        if (cfg && cfg.isAuthenticated) {
+            html += '<li><hr class="dropdown-divider"></li>' +
+                '<li><label class="dropdown-item d-flex align-items-start gap-2 mb-0" for="mobileTwoColBox">' +
+                '<input class="form-check-input mt-1 flex-shrink-0" type="checkbox" id="mobileTwoColBox"' +
+                (cfg.mobileTwoColumn ? ' checked' : '') + ' />' +
+                '<span>Two columns on phones' +
+                '<span class="small text-body-secondary d-block" style="white-space:normal;max-width:15rem">' +
+                'Widgets side by side here stay side by side on a phone; one alone in a row spans the width.' +
+                '</span></span></label></li>';
+        }
+
         menu.innerHTML = html;
+
+        var twoColBox = document.getElementById('mobileTwoColBox');
+        if (twoColBox) {
+            twoColBox.addEventListener('change', onTwoColumnToggle);
+            // Bootstrap closes the menu on any click inside it; a setting you may want to see the
+            // effect of is worth keeping open.
+            twoColBox.parentElement.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
 
         document.getElementById('newDashboardBtn').addEventListener('click', function (e) {
             e.preventDefault();
@@ -53,6 +76,27 @@
                     alert('Could not create dashboard.');
                 });
         });
+    }
+
+    // Saved against the dashboard, then handed to the grid so a desktop browser narrow enough to
+    // be in phone mode redraws immediately instead of on the next load.
+    function onTwoColumnToggle(e) {
+        var box  = e.target;
+        var want = box.checked;
+        box.disabled = true;
+
+        csrfFetch('/api/dashboard/mobile-columns?dashboard=' + encodeURIComponent(getCurrentDash()) +
+                  '&twoColumn=' + (want ? 'true' : 'false'), { method: 'POST' })
+            .then(function (r) {
+                if (!r.ok) throw new Error(r.status);
+                if (window.frcastrConfig) window.frcastrConfig.mobileTwoColumn = want;
+                window.dispatchEvent(new CustomEvent('mobileColumnsChanged', { detail: { twoColumn: want } }));
+            })
+            .catch(function () {
+                box.checked = !want;
+                alert('Could not save the phone column setting.');
+            })
+            .finally(function () { box.disabled = false; });
     }
 
     function updateToggleLabel() {

@@ -117,6 +117,13 @@
                     <input type="color" class="form-control form-control-color" id="awColor" value="#0d6efd" title="Widget text color" />
                     <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
                 </div>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="awHideMobile" />
+                    <label class="form-check-label" for="awHideMobile">
+                        Hide on phones
+                        <span class="small text-body-secondary d-block">Phones stack every widget full width; leave the ones that don't earn the space off.</span>
+                    </label>
+                </div>
                 <div class="row g-3 mt-1">
                     <div class="col-6">
                         <label class="form-label small mb-1" for="awPad">Padding <span class="text-body-secondary" id="awPadVal">4px</span></label>
@@ -224,6 +231,13 @@
                     <input type="color" class="form-control form-control-color" id="ewColor" value="#0d6efd" title="Widget text color" />
                     <span class="small text-body-secondary">Colors the value and title text for this widget.</span>
                 </div>
+                <div class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="ewHideMobile" />
+                    <label class="form-check-label" for="ewHideMobile">
+                        Hide on phones
+                        <span class="small text-body-secondary d-block">Phones stack every widget full width; leave the ones that don't earn the space off.</span>
+                    </label>
+                </div>
                 <div class="row g-3 mt-1">
                     <div class="col-6">
                         <label class="form-label small mb-1" for="ewPad">Padding <span class="text-body-secondary" id="ewPadVal">4px</span></label>
@@ -302,7 +316,8 @@ window.frcastrConfig = {
     rainUnit: '@Model.RainUnit',
     temperatureDecimals: @(Model.TemperatureDecimals ? "true" : "false"),
     stationLat: '@Model.StationLat',
-    stationLon: '@Model.StationLon'
+    stationLon: '@Model.StationLon',
+    mobileTwoColumn: @(Model.MobileTwoColumn ? "true" : "false")
 };
 </script>
 

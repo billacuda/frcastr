@@ -27,9 +27,49 @@ public class DashboardController(
 
         return Ok(new
         {
-            desktop = layout?.LayoutJson,
-            mobile  = layout?.LayoutJsonMobile
+            desktop         = layout?.LayoutJson,
+            mobile          = layout?.LayoutJsonMobile,
+            mobileTwoColumn = layout?.MobileTwoColumn ?? false
         });
+    }
+
+    /// <summary>
+    /// Per-dashboard phone layout: one column, or two so that widgets placed side by side on the
+    /// desktop stay side by side. Separate from SaveLayout because the phone arrangement itself is
+    /// derived rather than saved — this is the one thing about it worth persisting.
+    /// </summary>
+    [HttpPost("mobile-columns")]
+    [Authorize]
+    public async Task<IActionResult> SetMobileColumns(
+        bool twoColumn, string dashboard = "Default", CancellationToken ct = default)
+    {
+        // Resolved exactly the way GetLayout resolves it, so the flag lands on the row the
+        // dashboard actually reads back rather than on a shadowed one.
+        var layout = await db.DashboardLayouts
+            .Where(l => l.Name == dashboard)
+            .OrderBy(l => l.OwnerId == null ? 0 : 1)
+            .FirstOrDefaultAsync(ct);
+
+        if (layout is null)
+        {
+            layout = new DashboardLayout
+            {
+                OwnerId   = null,
+                Name      = dashboard,
+                UpdatedAt = DateTime.UtcNow
+            };
+            db.DashboardLayouts.Add(layout);
+        }
+
+        layout.MobileTwoColumn = twoColumn;
+        layout.UpdatedAt       = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        await audit.LogAsync("Dashboard.MobileColumnsChanged",
+            entityType: "DashboardLayout", entityName: dashboard,
+            newValue: twoColumn ? "2" : "1", ct: ct);
+
+        return NoContent();
     }
 
     [HttpPost("layout")]
@@ -154,6 +194,7 @@ public class DashboardController(
             Name             = to,
             LayoutJson       = sourceLayout?.LayoutJson ?? "[]",
             LayoutJsonMobile = sourceLayout?.LayoutJsonMobile ?? "[]",
+            MobileTwoColumn  = sourceLayout?.MobileTwoColumn ?? false,
             UpdatedAt        = DateTime.UtcNow
         };
         db.DashboardLayouts.Add(newLayout);

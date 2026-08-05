@@ -2,6 +2,61 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.12.0] - 2026-08-04
+
+### Added
+- **A "Two columns on phones" choice per dashboard.** The dashboard menu carries a switch that
+  pairs widgets on a phone the way they sit on the desktop: two side by side stay side by side,
+  while a widget alone in a desktop row still spans the width. It is saved against the dashboard
+  and copied when a dashboard is duplicated, and a browser already narrow enough to be in phone
+  mode redraws the moment it is toggled rather than on the next load.
+- **A "Hide on phones" switch on every widget.** The Add and Edit Widget modals carry a toggle
+  that keeps a widget out of the phone stack while leaving it on desktop — for the ones that don't
+  earn a full-width row on a small screen. A widget that isn't hidden stores nothing in its config,
+  the same convention the color and density controls use.
+- **A thermometer marker on hot forecast periods.** The 7-Day and Hourly Forecast strips now show
+  🌡️ beside the condition glyph when the temperature reaches 90 °F — the day's high for a daily
+  tile, the hour's own temperature for an hourly one. The threshold is held in Celsius (32.2 °C),
+  so the same periods stay marked when the navbar toggles between °C and °F.
+
+### Fixed
+- **Every widget was a squashed letterbox on a phone.** Below 768 px the grid gave each widget the
+  full width but kept its *desktop* row height, and then calibrated cell height so the whole
+  desktop layout squeezed into one phone viewport — a widget that was square on a monitor came out
+  roughly 4:1, with values and forecast strips unreadable. Phones now get a single-column stack
+  ordered by the desktop layout, where each widget's height comes from an aspect ratio suited to
+  its type — 2.4:1 for single-value tiles, 1.8:1 for forecast strips, near-square for the radar —
+  and the page scrolls to whatever that adds up to. Nothing has to be authored: every existing
+  dashboard gets a usable phone view for free. Desktop and tablet layouts are unchanged.
+- **The outdoor and indoor temperature tiles were cut off at the top on a phone.** They stack four
+  lines — the temperature, humidity and dew point, today's high and low, and the reading's age —
+  and each line is sized as a share of the widget's own height. Those shares were written for a
+  tile of one or two lines and sum past the height at four, so the stack overflowed its box and,
+  being centered, lost the top of the digits. The shares are now drawn from a budget that accounts
+  for how many lines a tile actually renders, and the timestamp scales with the widget instead of
+  sitting at a fixed 14px that a short tile could ill afford. The temperature and Air Quality tiles
+  also get a taller card on phones, with a floor under it so a widget paired into a two-column row
+  still has room for all four lines rather than the ratio alone deciding.
+- **A phone visit could overwrite the dashboard's saved mobile layout.** Drag and resize were
+  already disabled there, but gridstack still fires its `change` event while compacting the grid
+  during load, so a machine-generated arrangement was saved over whatever was stored. The phone
+  stack is derived rather than authored, so it is now neither read nor written.
+- **The dashboard kept the wrong layout after a phone was rotated.** The breakpoint was read once
+  at page load, so turning a phone sideways — or unfolding a foldable — left it in whichever mode
+  the first paint happened to see. It is now a live media query that rebuilds the grid on the way
+  across, releasing the radar's map so it stops fetching tiles for an element that is gone.
+- **Forecast strips rendered a dozen slivers in a narrow widget.** The 7-Day and Hourly strips now
+  cap how many periods they draw by the width their own container actually has, so a narrow widget
+  shows fewer, legible columns — on a wide dashboard as well as on a phone.
+- **The thermometer icon appeared at random on the forecast strips.** It was never a heat
+  indicator: it was what `conditionIcon` returned when a condition string matched none of its
+  keywords, so a tile lost its weather glyph entirely. Open-Meteo emits "Unknown" for WMO codes
+  outside its map, and NWS short forecasts such as "Hot", "Areas Of Smoke" and "Blustery" matched
+  nothing either. Those keywords are now recognized — smoke, smog, dust, sand and ash join the fog
+  tier, hail joins sleet, blustery and squall join the wind tier, and bare "Hot"/"Cold" fall
+  through to sun and snowflake — and anything still unmatched renders partly cloudy, which claims
+  neither clear skies nor a storm.
+
 ## [0.11.0] - 2026-08-03
 
 ### Security

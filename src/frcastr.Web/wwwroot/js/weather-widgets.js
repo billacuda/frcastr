@@ -103,11 +103,14 @@ window.WeatherWidgets = (function () {
         return (ms / 1000 >= offlineSecs) ? 'text-danger' : 'ts-fresh';
     }
 
+    // metric-ts rather than Bootstrap's .small: a fixed 14px is a modest strip of a desktop widget
+    // but a sixth of a phone tile, and it does not give any of it back as the tile gets shorter.
+    // The class scales with the box like every other line and tops out at the same 0.875rem.
     function tsHtml(isoTs) {
         if (!isoTs) return '';
         var age = ageStr(isoTs);
         if (!age) return '';
-        return '<div class="mt-auto pt-1 small ' + ageClass(isoTs) + '">' + age + '</div>';
+        return '<div class="mt-auto pt-1 metric-ts ' + ageClass(isoTs) + '">' + age + '</div>';
     }
 
     function windDirLabel(deg) {
@@ -116,20 +119,55 @@ window.WeatherWidgets = (function () {
         return dirs[Math.round(Number(deg) / 22.5) % 16];
     }
 
+    // Partly cloudy is the catch-all: it claims neither clear skies nor a storm. The thermometer
+    // that used to sit here is deliberately gone — it now means heat and nothing else, see
+    // hotMarker. A condition the chain below doesn't recognize is a gap in the keyword list, and
+    // showing a thermometer for it made the marker look like it appeared at random.
+    var FALLBACK_ICON = '⛅';
+
     function conditionIcon(cond) {
-        if (!cond) return '🌡️';
+        if (!cond) return FALLBACK_ICON;
         var c = cond.toLowerCase();
         if (c.indexOf('thunder') >= 0 || c.indexOf('lightning') >= 0) return '⛈️';
         if (c.indexOf('blizzard') >= 0) return '🌨️';
         if (c.indexOf('snow') >= 0)     return '❄️';
-        if (c.indexOf('sleet') >= 0 || c.indexOf('freez') >= 0 || c.indexOf('ice') >= 0) return '🌨️';
+        if (c.indexOf('sleet') >= 0 || c.indexOf('freez') >= 0 || c.indexOf('ice') >= 0 || c.indexOf('hail') >= 0) return '🌨️';
         if (c.indexOf('rain') >= 0 || c.indexOf('shower') >= 0 || c.indexOf('drizzle') >= 0) return '🌧️';
-        if (c.indexOf('fog') >= 0 || c.indexOf('mist') >= 0 || c.indexOf('haze') >= 0) return '🌫️';
+        if (c.indexOf('fog') >= 0 || c.indexOf('mist') >= 0 || c.indexOf('haze') >= 0 ||
+            c.indexOf('smoke') >= 0 || c.indexOf('smog') >= 0 || c.indexOf('dust') >= 0 ||
+            c.indexOf('sand') >= 0 || c.indexOf('ash') >= 0) return '🌫️';
         if (c.indexOf('overcast') >= 0) return '☁️';
         if (c.indexOf('cloud') >= 0)    return '⛅';
         if (c.indexOf('clear') >= 0 || c.indexOf('sunny') >= 0 || c.indexOf('fair') >= 0) return '☀️';
-        if (c.indexOf('wind') >= 0 || c.indexOf('breezy') >= 0 || c.indexOf('gusty') >= 0) return '💨';
-        return '🌡️';
+        if (c.indexOf('wind') >= 0 || c.indexOf('breezy') >= 0 || c.indexOf('gusty') >= 0 ||
+            c.indexOf('blustery') >= 0 || c.indexOf('squall') >= 0) return '💨';
+        // Temperature-only descriptions — NWS says "Hot" with no sky word at all. They come last so
+        // "Hot, then chance of showers" still reads as rain.
+        if (c.indexOf('hot') >= 0 || c.indexOf('heat') >= 0) return '☀️';
+        if (c.indexOf('cold') >= 0 || c.indexOf('frigid') >= 0) return '❄️';
+        return FALLBACK_ICON;
+    }
+
+    // A forecast column carries a weekday, a glyph, a high/low pair and a percentage, so below
+    // roughly this width the .fc-* clamps have nothing left to shrink and the strip becomes
+    // slivers. Twelve hours on a phone is a dozen of them, so the count is capped by the space
+    // actually available. Measured off the widget's own body rather than the window, so a narrow
+    // widget on a wide dashboard benefits the same way.
+    var FC_MIN_ITEM_PX = 44;
+
+    function fcItemCap(el, requested) {
+        var width = el && el.clientWidth;
+        if (!width) return requested; // not laid out yet; the next render has a real width
+        return Math.max(3, Math.min(requested, Math.floor(width / FC_MIN_ITEM_PX)));
+    }
+
+    // 90 °F. Held in Celsius because readings are stored that way and formatTempWhole converts only
+    // for display — a threshold in display units would move when the navbar C/F toggle flips.
+    var HOT_C = 32.2;
+
+    function hotMarker(tempC) {
+        if (tempC == null || isNaN(tempC) || tempC < HOT_C) return '';
+        return '<span class="fc-hot" title="90°F or hotter">🌡️</span>';
     }
 
     function aqiCategory(v) {
@@ -279,7 +317,18 @@ window.WeatherWidgets = (function () {
         var hiLow = parts.hiLow
             ? '<div class="metric-hl text-body-secondary d-flex gap-2">' + parts.hiLow + '</div>'
             : '';
-        return '<div class="metric d-flex flex-column h-100" style="min-height:0;overflow:hidden">' +
+
+        // How many lines this tile stacks — the value, an optional secondary line, an optional H/L
+        // line and the timestamp all share one container-query box, and each is sized from the
+        // box's own height (see the .metric-* rules). One budget cannot fit two lines and four
+        // alike: at four the coefficients sum past the height, the centered stack overflows and
+        // overflow:hidden takes it off the top, which is what cut the temperature tiles short on a
+        // phone. The count travels to the CSS so each line's share comes out of a budget that fits.
+        var lines = 1 + (parts.secondary || []).length +
+                    (parts.hiLow ? 1 : 0) + (parts.footer ? 1 : 0);
+        var linesCls = lines >= 4 ? ' metric-lines-4' : (lines === 3 ? ' metric-lines-3' : '');
+
+        return '<div class="metric d-flex flex-column h-100' + linesCls + '" style="min-height:0;overflow:hidden">' +
             '<div class="metric-fill d-flex flex-column justify-content-center flex-grow-1" style="min-height:0">' +
             '<div class="metric-primary d-flex align-items-baseline gap-1" style="line-height:1;min-width:0;flex-wrap:wrap">' +
             '<span class="fw-bold metric-value"' + colorStyle + '>' + parts.value + '</span>' +
@@ -502,7 +551,7 @@ window.WeatherWidgets = (function () {
     // 8: Forecast
     R[8] = function (el, config, data) {
         var periods = (data && data.forecast && data.forecast.aggregated) || [];
-        var max  = Number(config.periods) || 7;
+        var max  = fcItemCap(el, Number(config.periods) || 7);
         var u    = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
 
         // Prefer daytime periods so NWS night-first alternation doesn't show lows
@@ -569,7 +618,7 @@ window.WeatherWidgets = (function () {
             html +=
                 '<div class="d-flex flex-column align-items-center fc-item">' +
                 '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(day) + '</div>' +
-                '<div class="fc-icon">' + icon + '</div>' +
+                '<div class="fc-icon">' + icon + hotMarker(ex.hi != null ? ex.hi : p.temperature) + '</div>' +
                 '<div class="fw-semibold fc-temp text-nowrap">' + temp + '</div>' +
                 (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
@@ -956,7 +1005,7 @@ window.WeatherWidgets = (function () {
     // 18: Hourly Forecast
     R[18] = function (el, config, data) {
         var periods = (data && data.forecast && data.forecast.aggregatedHourly) || [];
-        var max  = Number(config.periods) || 12;
+        var max  = fcItemCap(el, Number(config.periods) || 12);
         var u    = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
 
         // Every configured hour is rendered; the .fc-* rules in site.css size the contents off the
@@ -984,7 +1033,7 @@ window.WeatherWidgets = (function () {
             html +=
                 '<div class="d-flex flex-column align-items-center fc-item">' +
                 '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(hour) + '</div>' +
-                '<div class="fc-icon">' + icon + '</div>' +
+                '<div class="fc-icon">' + icon + hotMarker(p.temperature) + '</div>' +
                 '<div class="fw-semibold fc-temp">' + temp + '</div>' +
                 (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
@@ -1082,6 +1131,17 @@ window.WeatherWidgets = (function () {
             } catch (e) {
                 el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-danger small">Render error</div>';
                 console.error('WeatherWidgets.render type=' + type, e);
+            }
+        },
+
+        // Called before a widget's element is discarded — the dashboard rebuilds the whole grid
+        // when it crosses the phone breakpoint. Only the radar holds anything beyond its own
+        // markup: a Leaflet map that keeps tile requests and listeners alive after its element
+        // is gone. Everything else renders into innerHTML and needs no teardown.
+        destroy: function (el) {
+            if (el && el._leafletMap) {
+                try { el._leafletMap.remove(); } catch (e) { /* already gone */ }
+                el._leafletMap = null;
             }
         }
     };

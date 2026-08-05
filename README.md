@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.11.0](CHANGELOG.md)**
+## **Current version [0.12.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -181,15 +181,32 @@ trimming padding on a small display buys directly larger numbers; the text size 
 tunes each widget on top of that. Edits preview live on the dashboard behind the dialog and revert if
 you cancel. A widget left on the defaults stores no override and keeps tracking them.
 
-**Forecast widgets** render every period they are configured for — up to 14 days, or hours for the
-hourly variant — sizing their contents from the period count rather than dropping the ones that don't
-fit. Labels, icons, temperatures and precipitation chances scale together, so the strip keeps its
-proportions at any widget size. Forecast temperatures are always whole degrees regardless of the
+**Forecast widgets** render the periods they are configured for — up to 14 days, or hours for the
+hourly variant — sizing their contents from the period count. Labels, icons, temperatures and
+precipitation chances scale together, so the strip keeps its proportions at any widget size. Below
+roughly 44px a column there is nothing left to shrink, so a strip narrower than its period count
+draws fewer, legible columns instead of a row of slivers; the cap comes from the widget's own width,
+so it applies to a narrow widget on a wide dashboard as much as to a phone. A period at 90 °F or
+hotter is marked 🌡️ beside its condition glyph — the day's high for a daily tile, the hour's own
+temperature for an hourly one. Forecast temperatures are always whole degrees regardless of the
 **Display → Show tenths** setting, since a forecast is an estimate.
 
 **Water Temperature** reads `temperature.water` and draws the value over an animated pool scene that
 follows the reading — icy, cool, open water, or steamy. The thresholds default to 77 / 84 / 90 °F
 and are editable per widget, so a hot tub and a cold plunge can each use their own.
+
+**On a phone** (under 768px) the dashboard becomes a single-column stack rather than the desktop
+grid. The order follows the desktop layout, read top to bottom and then left to right, and each
+widget's height comes from an aspect ratio suited to its type — a wide card for single-value tiles,
+taller for the ones that stack a second reading and a high/low under the value, near-square for the
+radar — so nothing has to be authored: every dashboard that works on a monitor gets a usable phone
+view for free. That stack is derived rather than saved, so visiting on a phone never disturbs the
+desktop arrangement, and crossing the breakpoint — rotating a phone, unfolding a foldable, resizing
+a window — rebuilds the grid in the other mode. Two options tune it: **Hide on phones** in the
+Add/Edit Widget dialog keeps a widget out of the stack while leaving it on desktop, and **Two
+columns on phones** in the Dashboard menu keeps widgets that sit side by side on the desktop side by
+side there, two to a row, with a widget alone in its desktop row still spanning the width. The
+column setting is saved per dashboard and copied when a dashboard is duplicated.
 
 **Test mode** (administrators, dashboard toolbar → **Test**) overlays simulated readings so layouts
 and animations can be exercised without waiting for the weather. Any channel can be set, including

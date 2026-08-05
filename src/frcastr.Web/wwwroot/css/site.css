@@ -108,8 +108,45 @@ body {
     line-height: 1.2;
     padding-top: 0.15em;
 }
+.widget-body .metric-ts {
+    font-size: clamp(0.45rem, calc(min(9cqh, 7cqw) * var(--widget-font-scale)), calc(0.875rem * var(--widget-font-scale)));
+    line-height: 1.2;
+}
 .ts-fresh {
     opacity: 0.3;
+}
+
+/* ── Metric line budget ────────────────────────────────────────────────────
+   The sizes above are what a tile of one or two lines can afford. They are
+   shares of the widget's height, so three or four lines of them sum past it:
+   the stack overflows its own box, and since .metric-fill centers what it
+   holds, the clipping lands on top of the value — a phone temperature tile,
+   short and wide with humidity, H/L and a timestamp under it, lost the top of
+   its digits. buildMetric() counts the lines it emits and the shares are
+   redrawn here to fit, the value giving up the most because it has the most.
+   Only the cqh terms move: the cqw terms already cap a narrow widget, and
+   they are what keeps the value large once a tile is tall enough to spare
+   the height. */
+.widget-body .metric-lines-3 .metric-value {
+    font-size: clamp(1rem, calc(min(42cqh, 36cqw) * var(--widget-font-scale)), calc(10rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-3 .metric-unit {
+    font-size: clamp(0.5rem, calc(min(17cqh, 14cqw) * var(--widget-font-scale)), calc(3rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-3 .metric-sub {
+    font-size: clamp(0.5rem, calc(min(18cqh, 16cqw) * var(--widget-font-scale)), calc(2.5rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-4 .metric-value {
+    font-size: clamp(1rem, calc(min(34cqh, 36cqw) * var(--widget-font-scale)), calc(10rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-4 .metric-unit {
+    font-size: clamp(0.5rem, calc(min(14cqh, 14cqw) * var(--widget-font-scale)), calc(3rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-4 .metric-sub {
+    font-size: clamp(0.5rem, calc(min(15cqh, 16cqw) * var(--widget-font-scale)), calc(2.5rem * var(--widget-font-scale)));
+}
+.widget-body .metric-lines-4 .metric-hl {
+    font-size: clamp(0.5rem, calc(min(10cqh, 10cqw) * var(--widget-font-scale)), calc(1.5rem * var(--widget-font-scale)));
 }
 
 /* DateTime widget: clock and date lines (override the generic metric sizes,
@@ -226,6 +263,18 @@ body {
    the loosest of the four. */
 .widget-body .fc-icon {
     font-size: clamp(0.7rem, calc(min(var(--fc-icon-cq), calc(var(--fc-w) * 0.70)) * var(--widget-font-scale)), calc(var(--fc-icon-max) * var(--widget-font-scale)));
+    line-height: 1;
+    /* The heat marker sits beside the condition glyph, so the pair centers as a unit rather
+       than leaving the second one hanging off the item's center line. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1em;
+}
+/* Sized in em so it rides the clamp above: it stays a badge on the condition glyph at every
+   widget size instead of reading as a second condition. */
+.widget-body .fc-hot {
+    font-size: 0.62em;
     line-height: 1;
 }
 

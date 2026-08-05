@@ -3,7 +3,12 @@
 
     var cfg          = window.frcastrConfig || {};
     var pollMs       = (cfg.pollIntervalSeconds || 30) * 1000;
-    var isMobile     = window.innerWidth < 768;
+    // Phones get a layout of their own. This is a live media query rather than a one-shot
+    // innerWidth read so that rotating a phone — or unfolding a foldable — lands in the right
+    // mode instead of keeping whichever one the first paint happened to see. 767.98px is
+    // Bootstrap's md boundary, the same one the @media rule in site.css uses.
+    var phoneQuery   = window.matchMedia('(max-width: 767.98px)');
+    var isMobile     = phoneQuery.matches;
     var LAYOUT_KEY   = 'frcastr-layout';
     var LAST_DASH_KEY = 'frcastr-last-dash';
     var MAX_HISTORY  = 60;
@@ -22,7 +27,126 @@
     var saveTimer     = null;
     var editMode      = false;
     var resizeTimer   = null;
-    var desktopRefRow = 0; // max row of saved desktop layout; used as refRow on mobile
+    var savedLayouts  = {}; // the /api/dashboard/layout response, kept for rebuilds
+
+    // Per dashboard, set from the Dashboard menu: keep widgets that sit side by side on the
+    // desktop side by side on a phone, two to a row, instead of one widget per row. Rendered into
+    // frcastrConfig by IndexModel so both this and the menu start from the same value.
+    var mobileTwoCol = !!cfg.mobileTwoColumn;
+
+    // ── Mobile sizing ─────────────────────────────────────────────────────────
+    //
+    // A phone widget's width is settled by the stack, so its height alone decides whether it is
+    // readable and a desktop row count means nothing here — carrying one over is what made
+    // every widget a letterbox. Each type gets a width:height ratio instead, and one grid row
+    // is a twelfth of the grid's width (see updateCellHeight), so a full-width widget h rows tall
+    // lands at 12/h whatever the phone — and a half-width one at 6/h, since it has half the width
+    // to be in ratio with. A type that isn't listed falls back to the default rather than a lookup
+    // miss, so a widget type added later still comes out sensible.
+    var MOBILE_ROWS_PER_WIDTH = 12;
+    var MOBILE_ASPECT_DEFAULT = 2.0;
+    var MOBILE_ASPECT = {
+        // Single-value tiles: a wide card, like a phone weather app's rows.
+        0: 2.4, 3: 2.4, 4: 2.4, 5: 2.4,
+        10: 2.4, 13: 2.4, 14: 2.4, 15: 2.4,
+        // Not single-value after all: the temperature and AQI tiles carry a second reading, a
+        // high/low line and a timestamp under the value. Four stacked lines in a 2.4:1 card leave
+        // each one too little to read, so they get a card half again as tall.
+        1: 1.9, 2: 1.9, 16: 1.9,
+        // Two-line tiles.
+        9: 2.0, 11: 2.0, 12: 2.0,
+        // Forecast strips: several columns of four stacked lines each.
+        8: 1.8, 18: 1.8,
+        // Dials and animated scenes need the height to read as a picture.
+        6: 1.6, 7: 1.6, 19: 1.6,
+        // A map is worth nothing letterboxed.
+        17: 1.1
+    };
+
+    // A floor under the aspect ratio, in rows. Ratio alone sizes a widget off the width it was
+    // given, which is fine until the width is half a phone: a tile of four stacked lines paired
+    // beside another comes out too short for any of them, however good the ratio looks. Types that
+    // stack more than a value and a timestamp claim a minimum here, so the pair is as tall as its
+    // contents need rather than as tall as half a screen implies.
+    var MOBILE_MIN_ROWS_DEFAULT = 3;
+    var MOBILE_MIN_ROWS = {
+        1: 5, 2: 5, 16: 5, // value + second reading + high/low + timestamp
+        3: 4, 4: 4         // value + dew point + timestamp
+    };
+
+    // fraction: how much of the grid's width this widget gets — 1 full width, 0.5 one of a pair.
+    function mobileHeight(type, fraction) {
+        var aspect = MOBILE_ASPECT[type] || MOBILE_ASPECT_DEFAULT;
+        var floor  = MOBILE_MIN_ROWS[type] || MOBILE_MIN_ROWS_DEFAULT;
+        return Math.max(floor, Math.round(MOBILE_ROWS_PER_WIDTH * fraction / aspect));
+    }
+
+    // Which widgets shared a row on the desktop. A row is defined by the vertical span of its
+    // first widget — anything that starts before that widget ends was beside it — rather than by
+    // the span of the row so far, which a tall widget would keep extending until unrelated rows
+    // chained into one.
+    function desktopRows(ordered, posOf) {
+        var rows = [], bottom = -1;
+        ordered.forEach(function (d) {
+            var p = posOf(d);
+            if (rows.length && p.y < bottom) {
+                rows[rows.length - 1].push(d);
+            } else {
+                rows.push([d]);
+                bottom = p.y + p.h;
+            }
+        });
+        return rows;
+    }
+
+    // Ordered the way the desktop layout reads: top to bottom, then left to right. Nothing has to
+    // be authored — every dashboard that works on a desktop gets a usable phone view for free,
+    // which is why the saved mobile layout is neither read nor written (see saveLayout).
+    //
+    // One column gives every widget a row of its own. Two columns keep desktop neighbors together
+    // in pairs; a widget alone in its desktop row still spans the phone's width, and so does the
+    // odd one out of a row of three.
+    function mobileNodes(defs, desktopLayout) {
+        var pos = {};
+        (desktopLayout || []).forEach(function (n) { pos[String(n.id)] = n; });
+
+        var posOf = function (d) {
+            var p = pos[String(d.id)];
+            return {
+                x: (p ? p.x : d.gridX) || 0,
+                y: (p ? p.y : d.gridY) || 0,
+                h: (p ? p.h : d.gridH) || 1
+            };
+        };
+
+        var ordered = defs.slice().sort(function (a, b) {
+            var pa = posOf(a), pb = posOf(b);
+            return pa.y - pb.y || pa.x - pb.x;
+        });
+
+        var cols  = mobileTwoCol ? 2 : 1;
+        var nodes = [];
+        var y     = 0;
+
+        desktopRows(ordered, posOf).forEach(function (row) {
+            for (var i = 0; i < row.length; i += cols) {
+                var pair = row.slice(i, i + cols);
+                if (pair.length < 2) {
+                    var h = mobileHeight(pair[0].type, 1);
+                    nodes.push({ def: pair[0], x: 0, y: y, w: cols, h: h });
+                    y += h;
+                } else {
+                    // Both take the taller of the two so the row reads as one band.
+                    var hp = Math.max(mobileHeight(pair[0].type, 0.5), mobileHeight(pair[1].type, 0.5));
+                    nodes.push({ def: pair[0], x: 0, y: y, w: 1, h: hp });
+                    nodes.push({ def: pair[1], x: 1, y: y, w: 1, h: hp });
+                    y += hp;
+                }
+            }
+        });
+
+        return nodes;
+    }
 
     // ── Cell height ───────────────────────────────────────────────────────────
 
@@ -43,15 +167,22 @@
 
     function updateCellHeight() {
         if (!grid) return;
+
+        // Phones: a row is a twelfth of the width, so each widget keeps the aspect ratio its
+        // type asked for and the page scrolls to whatever length that adds up to. Desktops
+        // still fit their whole layout into the viewport.
+        if (isMobile) {
+            var gridEl = document.getElementById('dashboard-grid');
+            var width  = (gridEl && gridEl.clientWidth) || window.innerWidth;
+            grid.cellHeight(Math.max(Math.floor(width / MOBILE_ROWS_PER_WIDTH), 8));
+            return;
+        }
+
         var nodes = grid.save(false) || [];
         var maxRow = 0;
         nodes.forEach(function (n) { var b = (n.y || 0) + (n.h || 1); if (b > maxRow) maxRow = b; });
-        if (!maxRow) maxRow = desktopRefRow || maxRowFromDefs(allDefs);
-        // On mobile, widgets stack vertically so maxRow is much larger than on desktop.
-        // Use the saved desktop layout's row count so both platforms compute the same
-        // cell height relative to their viewport — widgets look proportionally identical.
-        var refRow = isMobile ? Math.max(desktopRefRow || maxRowFromDefs(allDefs), 1) : maxRow;
-        grid.cellHeight(computeCellHeight(refRow));
+        if (!maxRow) maxRow = maxRowFromDefs(allDefs);
+        grid.cellHeight(computeCellHeight(maxRow));
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
@@ -73,91 +204,28 @@
         }
 
         allDefs = Array.isArray(widgetDefs) ? widgetDefs : [];
+        savedLayouts = layoutResp;
 
-        if (!allDefs.length) {
-            var container = document.getElementById('dashboard-grid');
-            if (container) {
-                container.innerHTML =
-                    '<div class="d-flex align-items-center justify-content-center py-5 text-body-secondary">' +
-                    'No widgets configured. Log in and visit Admin &rsaquo; Widgets to add widgets.' +
-                    '</div>';
-            }
-            return;
-        }
+        buildGrid();
 
-        var initCellH = 20; // placeholder; updateCellHeight() sets the real value below
+        // Crossing the breakpoint — rotating a phone, resizing a window — rebuilds the grid in
+        // the other mode. Everything it needs is already in hand, so nothing is refetched.
+        var onModeChange = function (e) {
+            if (e.matches === isMobile) return;
+            isMobile = e.matches;
+            buildGrid();
+        };
+        if (phoneQuery.addEventListener) phoneQuery.addEventListener('change', onModeChange);
+        else if (phoneQuery.addListener) phoneQuery.addListener(onModeChange); // Safari < 14
 
-        grid = GridStack.init({
-            column:        isMobile ? 2 : 12,
-            cellHeight:    initCellH,
-            margin:        6,
-            minH:          1,
-            handle:        '.widget-titlebar',
-            disableResize: isMobile || !cfg.isAuthenticated,
-            disableDrag:   isMobile || !cfg.isAuthenticated,
-            animate:       true
-        }, '#dashboard-grid');
-
-        if (cfg.isAuthenticated && !isMobile) {
-            var gridEl = document.getElementById('dashboard-grid');
-            if (gridEl) gridEl.classList.add('gs-editable');
-        }
-
-        // Expose grid for widgets that need to temporarily disable drag (e.g. Radar)
-        window.frcastrGrid = grid;
-
-        allDefs.forEach(function (w) {
-            var itemEl = grid.addWidget({
-                id:       String(w.id),
-                x:        w.gridX || 0,
-                y:        w.gridY || 0,
-                w:        isMobile ? 2 : (w.gridW || 4),
-                h:        w.gridH || 2,
-                minH:     1,
-                noResize: isMobile,
-                noMove:   isMobile
-            });
-            if (itemEl) {
-                var contentEl = itemEl.querySelector('.grid-stack-item-content');
-                if (contentEl) contentEl.innerHTML = buildShell(w);
-            }
+        // The Dashboard menu's "Two columns on phones" switch. Saved there; applied here, without
+        // a reload, so a narrow window shows the result straight away.
+        window.addEventListener('mobileColumnsChanged', function (e) {
+            var want = !!(e.detail && e.detail.twoColumn);
+            if (want === mobileTwoCol) return;
+            mobileTwoCol = want;
+            if (isMobile) buildGrid();
         });
-
-        // Apply saved layout (server preferred, localStorage fallback)
-        var savedRaw   = isMobile ? layoutResp.mobile   : layoutResp.desktop;
-        var savedLocal = getLocalLayout(isMobile ? 'mobile' : 'desktop');
-        var saved      = parseLayout(savedRaw) || savedLocal;
-        if (saved && saved.length) {
-            grid.load(saved, false);
-        }
-
-        // Compute desktop reference row count once. On mobile, widgets stack into many
-        // more rows than on desktop, so we calibrate cell height using the desktop
-        // layout's row span so both platforms look proportionally identical.
-        var desktopLayout = parseLayout(layoutResp.desktop) || getLocalLayout('desktop');
-        if (desktopLayout && desktopLayout.length) {
-            desktopLayout.forEach(function (n) {
-                var b = (n.y || 0) + (n.h || 1);
-                if (b > desktopRefRow) desktopRefRow = b;
-            });
-        }
-        if (!desktopRefRow) desktopRefRow = maxRowFromDefs(allDefs);
-
-        // Set cell height after layout is applied — same formula on mobile and desktop
-        updateCellHeight();
-
-        // Wire change handler after a tick so initial load doesn't trigger a save
-        setTimeout(function () {
-            grid.on('change', function () {
-                clearTimeout(saveTimer);
-                saveTimer = setTimeout(saveLayout, 600);
-            });
-            // Re-render the specific widget after user resizes it
-            grid.on('resizestop', function (event, el) {
-                var inner = el.querySelector('[data-widget-id]');
-                if (inner) renderWidget(inner);
-            });
-        }, 300);
 
         // Recalculate cell height on window resize
         window.addEventListener('resize', function () {
@@ -181,6 +249,109 @@
         // saving has to put the saved config back.
         var editModalEl = document.getElementById('editWidgetModal');
         if (editModalEl) editModalEl.addEventListener('hidden.bs.modal', function () { renderAll(); });
+    }
+
+    // ── Grid build ────────────────────────────────────────────────────────────
+    //
+    // Separate from init() because the two modes are different grids, not one grid with a flag:
+    // crossing the phone breakpoint tears this down and builds the other one from the widget
+    // definitions and layouts already fetched.
+
+    function buildGrid() {
+        var container = document.getElementById('dashboard-grid');
+        if (!container) return;
+
+        if (grid) {
+            // Let widgets release anything that outlives their markup — the radar's Leaflet map
+            // would otherwise keep fetching tiles for an element that no longer exists.
+            container.querySelectorAll('[data-widget-body]').forEach(function (body) {
+                if (window.WeatherWidgets && WeatherWidgets.destroy) WeatherWidgets.destroy(body);
+            });
+            grid.destroy(false); // keep the container itself; its items go below
+            grid = null;
+            window.frcastrGrid = null;
+            container.innerHTML = '';
+        }
+
+        // A widget can opt out of the phone view; see applyMobileToConfig.
+        var defs = isMobile
+            ? allDefs.filter(function (d) { return !safeJson(d.config).hideOnMobile; })
+            : allDefs;
+
+        if (!defs.length) {
+            container.innerHTML =
+                '<div class="d-flex align-items-center justify-content-center py-5 text-body-secondary text-center px-3">' +
+                (allDefs.length
+                    ? 'Every widget on this dashboard is hidden on phones.'
+                    : 'No widgets configured. Log in and visit Admin &rsaquo; Widgets to add widgets.') +
+                '</div>';
+            return;
+        }
+
+        grid = GridStack.init({
+            column:        isMobile ? (mobileTwoCol ? 2 : 1) : 12,
+            cellHeight:    20, // placeholder; updateCellHeight() sets the real value below
+            margin:        6,
+            minH:          1,
+            handle:        '.widget-titlebar',
+            disableResize: isMobile || !cfg.isAuthenticated,
+            disableDrag:   isMobile || !cfg.isAuthenticated,
+            animate:       true
+        }, '#dashboard-grid');
+
+        container.classList.toggle('gs-editable', cfg.isAuthenticated && !isMobile);
+
+        // Expose grid for widgets that need to temporarily disable drag (e.g. Radar)
+        window.frcastrGrid = grid;
+
+        if (isMobile) {
+            var desktopLayout = parseLayout(savedLayouts.desktop) || getLocalLayout('desktop');
+            mobileNodes(defs, desktopLayout).forEach(function (n) {
+                addShell(grid.addWidget({
+                    id: String(n.def.id), x: n.x, y: n.y, w: n.w, h: n.h, noResize: true, noMove: true
+                }), n.def);
+            });
+        } else {
+            defs.forEach(function (w) {
+                addShell(grid.addWidget({
+                    id:   String(w.id),
+                    x:    w.gridX || 0,
+                    y:    w.gridY || 0,
+                    w:    w.gridW || 4,
+                    h:    w.gridH || 2,
+                    minH: 1
+                }), w);
+            });
+
+            // Apply saved layout (server preferred, localStorage fallback)
+            var saved = parseLayout(savedLayouts.desktop) || getLocalLayout('desktop');
+            if (saved && saved.length) grid.load(saved, false);
+        }
+
+        // Set cell height after the layout is applied
+        updateCellHeight();
+
+        // Wire change handler after a tick so initial load doesn't trigger a save
+        setTimeout(function () {
+            if (!grid) return;
+            grid.on('change', function () {
+                clearTimeout(saveTimer);
+                saveTimer = setTimeout(saveLayout, 600);
+            });
+            // Re-render the specific widget after user resizes it
+            grid.on('resizestop', function (event, el) {
+                var inner = el.querySelector('[data-widget-id]');
+                if (inner) renderWidget(inner);
+            });
+        }, 300);
+
+        renderAll();
+    }
+
+    function addShell(itemEl, def) {
+        if (!itemEl) return;
+        var contentEl = itemEl.querySelector('.grid-stack-item-content');
+        if (contentEl) contentEl.innerHTML = buildShell(def);
     }
 
     // ── Widget shell HTML ─────────────────────────────────────────────────────
@@ -366,6 +537,12 @@
 
     async function saveLayout() {
         if (!grid) return;
+        // The phone stack is derived from the desktop layout, so there is nothing here worth
+        // keeping — and gridstack fires 'change' during its own compaction, which used to let a
+        // machine-generated arrangement overwrite the saved one. The server's LayoutJsonMobile
+        // column stays where it is, now unwritten.
+        if (isMobile) return;
+
         var items = grid.save(false);
         var layout = items.map(function (n) {
             return { id: n.id, x: n.x, y: n.y, w: n.w, h: n.h };
@@ -373,26 +550,21 @@
         var layoutJson = JSON.stringify(layout);
 
         if (!cfg.isAuthenticated) {
-            setLocalLayout(isMobile ? 'mobile' : 'desktop', layout);
+            setLocalLayout('desktop', layout);
             return;
         }
 
         try {
-            var body = JSON.stringify(
-                isMobile
-                    ? { desktop: null, mobile: layoutJson }
-                    : { desktop: layoutJson, mobile: null }
-            );
             var resp = await csrfFetch('/api/dashboard/layout?dashboard=' + encodeURIComponent(currentDash), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: body
+                body: JSON.stringify({ desktop: layoutJson, mobile: null })
             });
             if (resp.status === 401) {
-                setLocalLayout(isMobile ? 'mobile' : 'desktop', layout);
+                setLocalLayout('desktop', layout);
             }
         } catch (e) {
-            setLocalLayout(isMobile ? 'mobile' : 'desktop', layout);
+            setLocalLayout('desktop', layout);
         }
     }
 
@@ -704,6 +876,22 @@
         return conf;
     }
 
+    // ── Hide on phones ────────────────────────────────────────────────────────
+    // Same merge-or-strip convention as color and density: a widget that isn't hidden stores no
+    // key at all. Applied after simpleToConfig(), so it works in both Simple and JSON modes.
+
+    function setMobileControl(prefix, conf) {
+        var el = document.getElementById(prefix + 'HideMobile');
+        if (el) el.checked = !!(conf && conf.hideOnMobile);
+    }
+
+    function applyMobileToConfig(prefix, conf) {
+        var el = document.getElementById(prefix + 'HideMobile');
+        conf = conf || {};
+        if (el && el.checked) conf.hideOnMobile = true; else delete conf.hideOnMobile;
+        return conf;
+    }
+
     // ── Per-widget density controls ───────────────────────────────────────────
     // Must match the baseline in site.css: a widget sitting on the defaults stores neither key.
 
@@ -777,6 +965,7 @@
         showSimpleSection('ew', def.type, conf);
         setColorControl('ew', conf.color);
         setDensityControls('ew', conf);
+        setMobileControl('ew', conf);
 
         new bootstrap.Modal('#editWidgetModal').show();
     };
@@ -803,6 +992,7 @@
 
         parsed = applyColorToConfig('ew', parsed);
         parsed = applyDensityToConfig('ew', parsed);
+        parsed = applyMobileToConfig('ew', parsed);
 
         var r = await csrfFetch('/api/dashboard/widgets/' + id + '/config', {
             method:  'PATCH',
@@ -813,7 +1003,9 @@
         var def = allDefs.find(function (d) { return d.id === id; });
         if (def) def.config = JSON.stringify(parsed || {});
         bootstrap.Modal.getInstance(document.getElementById('editWidgetModal')).hide();
-        renderAll();
+        // "Hide on phones" changes which widgets the stack contains, so the phone view rebuilds
+        // rather than re-rendering what is already there.
+        if (isMobile) buildGrid(); else renderAll();
     };
 
     window.openAddWidgetModal = async function () {
@@ -826,6 +1018,7 @@
         showSimpleSection('aw', 1, {});
         setColorControl('aw', null);
         setDensityControls('aw', {});
+        setMobileControl('aw', {});
         new bootstrap.Modal('#addWidgetModal').show();
     };
 
@@ -846,6 +1039,7 @@
 
         configObj = applyColorToConfig('aw', configObj);
         configObj = applyDensityToConfig('aw', configObj);
+        configObj = applyMobileToConfig('aw', configObj);
 
         var body = {
             type:          type,
@@ -872,6 +1066,10 @@
         bootstrap.Modal.getInstance(document.getElementById('addWidgetModal')).hide();
 
         allDefs.push(w);
+
+        // The phone stack is ordered and sized as a whole, so it rebuilds rather than having a
+        // widget spliced into it at desktop dimensions.
+        if (isMobile) { buildGrid(); return; }
 
         var itemEl = grid.addWidget({
             id: String(w.id),
