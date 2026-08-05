@@ -96,22 +96,26 @@ window.TestMode = (function () {
     // ── Scenarios ─────────────────────────────────────────────────────────────
     // The interesting cases are combinations, not single values.
 
+    // cloud.coverage is deliberately absent: it is no longer a stored channel, and the Weather
+    // Animation widget takes its sky cover from the forecast. To preview a cloudy or clear scene,
+    // use that widget's own manual condition override — these scenarios drive the sensor-side
+    // half of it (precipitation, lightning, wind), which still outranks the forecast.
     var SCENARIOS = {
         'Freezing': {
             'temperature.outdoor': -8, 'humidity.outdoor': 80, 'wind.speed': 25,
-            'feelslike.outdoor': -16, 'rainfall': 1, 'cloud.coverage': 90
+            'feelslike.outdoor': -16, 'rainfall': 1
         },
         'Hot & humid': {
             'temperature.outdoor': 35, 'humidity.outdoor': 75, 'wind.speed': 6,
-            'feelslike.outdoor': 45, 'rainfall': 0, 'cloud.coverage': 10
+            'feelslike.outdoor': 45, 'rainfall': 0
         },
         'Storm': {
             'temperature.outdoor': 18, 'humidity.outdoor': 95, 'wind.speed': 65,
-            'rainfall': 12, 'cloud.coverage': 100, 'lightning': 1, 'pressure': 985
+            'rainfall': 12, 'lightning': 1, 'pressure': 985
         },
         'Pool day': {
             'temperature.outdoor': 31, 'humidity.outdoor': 45, 'wind.speed': 5,
-            'temperature.water': 29, 'cloud.coverage': 5, 'rainfall': 0
+            'temperature.water': 29, 'rainfall': 0
         },
         'Cold plunge': {
             'temperature.water': 12, 'temperature.outdoor': 8, 'humidity.outdoor': 70

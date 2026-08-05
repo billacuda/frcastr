@@ -79,3 +79,10 @@ public record HistoryResult(
     // and repeating the key on each one bloats the response for nothing. Callers compose the
     // channel key themselves, the same way ChannelKey.Format does.
     IReadOnlyDictionary<int, DeviceRef>? Devices = null);
+
+/// <summary>
+/// A channel's surviving high or low, and where it came from. Used to rebuild an all-time record
+/// from the data still standing behind it — after a purge, or after a source is no longer allowed
+/// to hold one.
+/// </summary>
+public record ChannelExtreme(decimal Value, DateTime At, int? SourceId);

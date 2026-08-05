@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.12.0](CHANGELOG.md)**
+## **Current version [0.13.0](CHANGELOG.md)**
 
 ## Stack
 
@@ -66,6 +66,13 @@ every user out on the next deploy.
 | DataSink | Upload to Weather Underground, PWSWeather, or custom endpoint |
 | Alerts | NWS severe weather alerts |
 | AirQuality | OpenWeatherMap Air Pollution API or push ingest |
+
+Pull and AirQuality sources do not log temperature, humidity or dew point. Those channels belong
+to the station's own hardware — a regional figure fetched off the internet sitting on the same
+channel distorts the history line and can hold an all-time record the station never measured — so
+they are dropped at ingest and come from Push and MQTT devices only. Air quality, wind, pressure
+and rainfall from a pull source are logged as before. Cloud coverage is not fetched or logged at
+all; the Weather Animation widget takes its sky from the forecast condition instead.
 
 A push reading is `{"channel": "temperature.outdoor", "value": 21.4, "unit": "C"}`. Add
 `"device": "<Device ID>"` to attribute it to a registered device; unlike MQTT, push does not

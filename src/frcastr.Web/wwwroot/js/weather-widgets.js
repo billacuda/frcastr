@@ -161,13 +161,19 @@ window.WeatherWidgets = (function () {
         return Math.max(3, Math.min(requested, Math.floor(width / FC_MIN_ITEM_PX)));
     }
 
-    // 90 °F. Held in Celsius because readings are stored that way and formatTempWhole converts only
-    // for display — a threshold in display units would move when the navbar C/F toggle flips.
-    var HOT_C = 32.2;
+    // 90 °F, tested against the same whole number the tile prints. Comparing the raw reading
+    // against 32.2 °C instead put the cut somewhere inside a displayed degree: 32.0 °C renders as
+    // "90" in Fahrenheit and would have gone unmarked while 32.3 °C, also "90", was marked — two
+    // tiles showing the same figure, one with a thermometer. Always evaluated in Fahrenheit so the
+    // marked set does not move when the navbar C/F toggle flips.
+    function isHot(tempC) {
+        if (tempC == null || isNaN(tempC)) return false;
+        return Math.round(Number(tempC) * 9 / 5 + 32) >= 90;
+    }
 
-    function hotMarker(tempC) {
-        if (tempC == null || isNaN(tempC) || tempC < HOT_C) return '';
-        return '<span class="fc-hot" title="90°F or hotter">🌡️</span>';
+    function hotMarker(tempC, title) {
+        if (!isHot(tempC)) return '';
+        return '<span class="fc-hot" title="' + title + '">🌡️</span>';
     }
 
     function aqiCategory(v) {
@@ -241,7 +247,43 @@ window.WeatherWidgets = (function () {
 
     // ── Animation builder ────────────────────────────────────────────────────
 
-    function animClass(readings, config) {
+    // The forecast period covering now — the hourly strip first, since it is the finer grain, and
+    // the coarser daily buckets only if there is no hourly source. Periods are ordered, so the one
+    // whose window contains now is the answer; a gap or a stale cache yields nothing rather than a
+    // wrong period.
+    function currentForecastPeriod(forecast) {
+        if (!forecast) return null;
+        var now = Date.now();
+        var lists = [forecast.aggregatedHourly, forecast.aggregated];
+        for (var i = 0; i < lists.length; i++) {
+            var list = lists[i] || [];
+            for (var j = 0; j < list.length; j++) {
+                var start = new Date(utcTs(list[j].periodStart) || list[j].periodStart).getTime();
+                var end   = new Date(utcTs(list[j].periodEnd)   || list[j].periodEnd).getTime();
+                if (!isNaN(start) && !isNaN(end) && now >= start && now < end) return list[j];
+            }
+        }
+        return null;
+    }
+
+    // Sky cover from a forecast condition string. Cloud coverage used to be a logged reading, but
+    // it came from the same internet sources the station stopped storing, and a percentage was
+    // never what the scene needed — three tiers is. Only the sky is read here; precipitation and
+    // lightning stay with the sensors below.
+    function conditionSky(cond) {
+        if (!cond) return null;
+        var c = cond.toLowerCase();
+        if (c.indexOf('partly') >= 0 || c.indexOf('mostly sunny') >= 0 ||
+            c.indexOf('mostly clear') >= 0 || c.indexOf('scattered') >= 0 ||
+            c.indexOf('few') >= 0 || c.indexOf('intervals') >= 0) return 'wa-partly-cloudy';
+        if (c.indexOf('overcast') >= 0 || c.indexOf('cloud') >= 0 || c.indexOf('fog') >= 0 ||
+            c.indexOf('mist') >= 0 || c.indexOf('haze') >= 0 || c.indexOf('smoke') >= 0 ||
+            c.indexOf('smog') >= 0) return 'wa-cloud';
+        if (c.indexOf('clear') >= 0 || c.indexOf('sunny') >= 0 || c.indexOf('fair') >= 0) return 'wa-sun';
+        return null;
+    }
+
+    function animClass(readings, config, data) {
         if (config.conditionSource === 'manual' && config.manualCondition) {
             return 'wa-' + config.manualCondition;
         }
@@ -249,14 +291,16 @@ window.WeatherWidgets = (function () {
         var temp         = val({ value: (readings['temperature.outdoor'] || {}).value || 15 });
         var hasLightning = readings['lightning'] != null;
         var wind         = Number((readings['wind.speed']           || {}).value || 0);
-        var cloudRaw     = (readings['cloud.coverage'] || {}).value;
-        var cloud        = cloudRaw != null ? Number(cloudRaw) : -1;
+        // A sensor outranks a forecast: rain in the gauge is rain, whatever the sky was predicted
+        // to do. The forecast only gets to decide the sky when nothing is falling.
         if (hasLightning)            return 'wa-lightning';
         if (precip > 0 && temp <= 2) return 'wa-snow';
         if (precip > 0)              return 'wa-rain';
-        if (cloud > 65)              return 'wa-cloud';
+        var period = currentForecastPeriod(data && data.forecast);
+        var sky    = conditionSky(period && period.condition);
+        if (sky === 'wa-cloud')      return 'wa-cloud';
         if (wind > 50)               return 'wa-cloud';
-        if (cloud >= 20)             return 'wa-partly-cloudy';
+        if (sky)                     return sky;
         return 'wa-sun';
     }
 
@@ -264,6 +308,16 @@ window.WeatherWidgets = (function () {
         if (!night) return '<div class="wa-sun-disc"></div>';
         return '<div class="wa-sun-disc wa-moon-disc"><span class="wa-moon-icon">' +
             escHtml(moonIcon || '🌙') + '</span></div>';
+    }
+
+    // The moon for the scenes that are built around a cloud rather than a disc — overcast, rain,
+    // snow and lightning. It sits in the corner of the frame behind the weather, so the phase is
+    // readable on a rainy night instead of the widget going blank of any sky at all. First in the
+    // DOM so the cloud shapes and drops, which are all positioned, paint over it. Day is left
+    // alone: a sun behind a rain cloud reads as the wrong weather, a moon behind one reads as night.
+    function skyMoonHtml(night, moonIcon) {
+        if (!night) return '';
+        return '<div class="wa-sky-moon">' + discHtml(true, moonIcon) + '</div>';
     }
 
     function buildAnimHtml(cls, night, moonIcon) {
@@ -281,6 +335,7 @@ window.WeatherWidgets = (function () {
         }
         if (cls === 'wa-cloud') {
             return '<div class="weather-anim ' + wrapCls + '">' +
+                skyMoonHtml(night, moonIcon) +
                 '<div class="wa-cloud-shape wa-cloud-back"></div>' +
                 '<div class="wa-cloud-shape wa-cloud-front"></div>' +
                 '</div>';
@@ -296,6 +351,7 @@ window.WeatherWidgets = (function () {
             drops += el;
         }
         return '<div class="weather-anim ' + wrapCls + '">' +
+            skyMoonHtml(night, moonIcon) +
             '<div class="wa-cloud-shape"></div>' +
             (cls === 'wa-lightning'
                 ? '<div class="wa-bolt">&#9889;</div>'
@@ -543,7 +599,7 @@ window.WeatherWidgets = (function () {
     // 7: Weather Animation
     R[7] = function (el, config, data) {
         var readings = (data && data.current && data.current.readings) || {};
-        var cls   = animClass(readings, config);
+        var cls   = animClass(readings, config, data);
         var night = isNightNow(data && data.sun);
         el.innerHTML = buildAnimHtml(cls, night, data && data.moon && data.moon.icon);
     };
@@ -615,10 +671,14 @@ window.WeatherWidgets = (function () {
                 temp = '&ndash;';
             }
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
+            // The day's high, not the period's own reading — a day tile summarizes the whole day.
+            // The hourly strip marks each hour on its own temperature, so the two disagree by
+            // design and the tooltips say which is which.
+            var hot = hotMarker(ex.hi != null ? ex.hi : p.temperature, 'High reaches 90°F');
             html +=
                 '<div class="d-flex flex-column align-items-center fc-item">' +
                 '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(day) + '</div>' +
-                '<div class="fc-icon">' + icon + hotMarker(ex.hi != null ? ex.hi : p.temperature) + '</div>' +
+                '<div class="fc-icon' + (hot ? ' has-hot' : '') + '">' + icon + hot + '</div>' +
                 '<div class="fw-semibold fc-temp text-nowrap">' + temp + '</div>' +
                 (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';
@@ -1030,10 +1090,11 @@ window.WeatherWidgets = (function () {
                 ? window.formatTempWhole(p.temperature) + '&deg;' + u
                 : '&ndash;';
             var prcp = p.precipChance != null ? Math.round(p.precipChance) + '%' : '';
+            var hot = hotMarker(p.temperature, '90°F or hotter');
             html +=
                 '<div class="d-flex flex-column align-items-center fc-item">' +
                 '<div class="text-body-secondary text-truncate w-100 text-center fc-label">' + escHtml(hour) + '</div>' +
-                '<div class="fc-icon">' + icon + hotMarker(p.temperature) + '</div>' +
+                '<div class="fc-icon' + (hot ? ' has-hot' : '') + '">' + icon + hot + '</div>' +
                 '<div class="fw-semibold fc-temp">' + temp + '</div>' +
                 (prcp ? '<div class="text-info fc-prcp">' + prcp + '</div>' : '') +
                 '</div>';

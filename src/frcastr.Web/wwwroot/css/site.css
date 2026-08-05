@@ -260,9 +260,13 @@ body {
     line-height: 1.1;
 }
 /* A glyph tolerates more of the item's width than text does, so its share is
-   the loosest of the four. */
+   the loosest of the four. The share is a variable because a tile carrying the
+   heat marker has two glyphs to fit in the width one had: at 0.70 the pair
+   overflowed .fc-item, which is overflow:hidden, and the thermometer was cut
+   off the right edge on some tiles and not others. */
 .widget-body .fc-icon {
-    font-size: clamp(0.7rem, calc(min(var(--fc-icon-cq), calc(var(--fc-w) * 0.70)) * var(--widget-font-scale)), calc(var(--fc-icon-max) * var(--widget-font-scale)));
+    --fc-icon-w-share: 0.70;
+    font-size: clamp(0.7rem, calc(min(var(--fc-icon-cq), calc(var(--fc-w) * var(--fc-icon-w-share))) * var(--widget-font-scale)), calc(var(--fc-icon-max) * var(--widget-font-scale)));
     line-height: 1;
     /* The heat marker sits beside the condition glyph, so the pair centers as a unit rather
        than leaving the second one hanging off the item's center line. */
@@ -270,12 +274,20 @@ body {
     align-items: center;
     justify-content: center;
     gap: 0.1em;
+    min-width: 0;
+    white-space: nowrap;
+}
+/* Nominally 1em + 0.1em + 0.62em, but emoji routinely draw wider than their advance,
+   so the share leaves headroom rather than sitting flush against the item's edge. */
+.widget-body .fc-icon.has-hot {
+    --fc-icon-w-share: 0.42;
 }
 /* Sized in em so it rides the clamp above: it stays a badge on the condition glyph at every
    widget size instead of reading as a second condition. */
 .widget-body .fc-hot {
     font-size: 0.62em;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 /* ── Per-widget text color ─────────────────────────────────────────────────

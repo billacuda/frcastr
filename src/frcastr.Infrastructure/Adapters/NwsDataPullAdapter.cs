@@ -78,9 +78,10 @@ public class NwsDataPullAdapter(
 
             var results = new List<(string, decimal, string)>();
 
-            TryAdd(results, "temperature.outdoor", p.Temperature?.Value, "°C");
-            TryAdd(results, "humidity.outdoor",    p.RelativeHumidity?.Value, "%");
-            TryAdd(results, "dewpoint.outdoor",    p.Dewpoint?.Value, "°C");
+            // Temperature, humidity and dew point are the station's own devices' to report — a
+            // regional observation on those channels is dropped before storage anyway, so it is
+            // not read out here. Cloud coverage is gone entirely; the Weather Animation widget
+            // reads sky cover from the forecast now.
             TryAdd(results, "wind.speed",          p.WindSpeed?.Value, "km/h");
             TryAdd(results, "wind.direction",      p.WindDirection?.Value, "°");
             TryAdd(results, "wind.gust",           p.WindGust?.Value, "km/h");
@@ -93,11 +94,6 @@ public class NwsDataPullAdapter(
             if (p.PrecipitationLastHour?.Value is double precip)
                 results.Add(("rainfall", (decimal)(precip * 1000.0), "mm"));
 
-            // Cloud coverage: take highest-coverage layer, convert oktas to %
-            var cloudPct = MaxCloudCoverage(p.CloudLayers);
-            if (cloudPct >= 0)
-                results.Add(("cloud.coverage", cloudPct, "%"));
-
             return results;
         }
         catch (Exception ex)
@@ -105,26 +101,6 @@ public class NwsDataPullAdapter(
             logger.LogError(ex, "NwsDataPull: fetch failed for source {Id}.", source.Id);
             return [];
         }
-    }
-
-    private static decimal MaxCloudCoverage(List<NwsCloudLayer>? layers)
-    {
-        if (layers is null || layers.Count == 0) return -1;
-        var maxOktas = 0;
-        foreach (var layer in layers)
-        {
-            var oktas = layer.Amount?.ToUpperInvariant() switch
-            {
-                "SKC" or "CLR" or "NSC" => 0,
-                "FEW"                   => 2,
-                "SCT"                   => 4,
-                "BKN"                   => 6,
-                "OVC" or "OBS" or "VV"  => 8,
-                _                       => 0
-            };
-            if (oktas > maxOktas) maxOktas = oktas;
-        }
-        return (decimal)(maxOktas * 100) / 8;
     }
 
     private static void TryAdd(List<(string, decimal, string)> list, string channel, double? value, string unit)
@@ -167,24 +143,15 @@ public class NwsDataPullAdapter(
 
     private sealed class NwsObsProps
     {
-        [JsonPropertyName("temperature")]          public NwsQuantValue? Temperature { get; init; }
-        [JsonPropertyName("dewpoint")]             public NwsQuantValue? Dewpoint { get; init; }
         [JsonPropertyName("windDirection")]        public NwsQuantValue? WindDirection { get; init; }
         [JsonPropertyName("windSpeed")]            public NwsQuantValue? WindSpeed { get; init; }
         [JsonPropertyName("windGust")]             public NwsQuantValue? WindGust { get; init; }
         [JsonPropertyName("barometricPressure")]   public NwsQuantValue? BarometricPressure { get; init; }
-        [JsonPropertyName("relativeHumidity")]     public NwsQuantValue? RelativeHumidity { get; init; }
         [JsonPropertyName("precipitationLastHour")] public NwsQuantValue? PrecipitationLastHour { get; init; }
-        [JsonPropertyName("cloudLayers")]           public List<NwsCloudLayer>? CloudLayers { get; init; }
     }
 
     private sealed class NwsQuantValue
     {
         [JsonPropertyName("value")] public double? Value { get; init; }
-    }
-
-    private sealed class NwsCloudLayer
-    {
-        [JsonPropertyName("amount")] public string? Amount { get; init; }
     }
 }

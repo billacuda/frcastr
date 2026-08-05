@@ -116,13 +116,19 @@ public class NwsAdapter(
         PeriodStart: p.StartTime.UtcDateTime,
         PeriodEnd: p.EndTime.UtcDateTime,
         IsDaytime: p.IsDaytime,
-        Temperature: FToC(p.Temperature),
+        Temperature: ToCelsius(p.Temperature, p.TemperatureUnit),
         Condition: p.ShortForecast,
         PrecipChance: p.ProbabilityOfPrecipitation?.Value,
         WindSpeed: ParseWindKmh(p.WindSpeed),
         WindDirection: p.WindDirection);
 
-    private static double FToC(double f) => (f - 32.0) * 5.0 / 9.0;
+    /// <summary>
+    /// The default endpoint answers in Fahrenheit, but a source URL carrying <c>?units=si</c> gets
+    /// Celsius back. Converting that a second time threw every temperature about 18° low, which is
+    /// silently wrong rather than obviously broken — cold enough to look like weather.
+    /// </summary>
+    private static double ToCelsius(double value, string? unit)
+        => unit?.Trim().ToUpperInvariant() is "C" or "°C" ? value : (value - 32.0) * 5.0 / 9.0;
 
     private static double? ParseWindKmh(string? windSpeed)
     {

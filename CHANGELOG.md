@@ -2,6 +2,55 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.13.0] - 2026-08-04
+
+### Changed
+- **Temperature, humidity and dew point are no longer logged from internet sources.** A Pull or
+  AirQuality source writing `temperature.*`, `humidity.*` or `dewpoint.*` was feeding the same
+  station-wide channels the MQTT sensors feed, so a regional figure fetched off the web landed on
+  the history graph beside the station's own readings and could hold an all-time record the
+  station never measured. Those channels are now dropped at ingest and come from devices only.
+  Air quality, wind, pressure and rainfall from a pull source are unaffected. Records already
+  contaminated are repaired once, on the first boot after this upgrade: each affected extreme is
+  recomputed from device data, and one with nothing behind it is removed. The readings a pull
+  source wrote before this change stay in the database, but they are no longer read back: the
+  Period Summary charts, the Monthly Data averages and the all-time records are all built from
+  device data alone.
+- **Cloud coverage and wind direction are out of the Period Summary.** The Period Summary drew a
+  line for every channel that had data, including a dead one and a compass bearing whose average
+  and range say nothing — the same two the All-Time Records table and the Monthly Data picker
+  already leave out. A chart widget pointed at wind direction by name still gets it; only the
+  everything-at-once view makes the cut.
+- **Cloud coverage is not collected any more.** Nothing logged it and nothing but the Weather
+  Animation widget read it, so it is gone from the Open-Meteo and NWS pull queries and from the
+  All-Time Records tab and Monthly Data picker.
+- **The Weather Animation widget picks its sky from the forecast.** It used the `cloud.coverage`
+  reading, which no longer exists; it now maps the current period's condition text to clear,
+  partly cloudy or overcast. Precipitation and lightning still come from the station's own
+  sensors — a real reading beats a forecast — and a station with no forecast source configured
+  gets the sun, rain and wind scenes as before.
+
+### Fixed
+- **The hot-period thermometer showed on some 90° tiles and not others.** The marker tested the
+  raw Celsius value against 32.2 °C while the tile printed a rounded Fahrenheit number, so
+  everything from 32.0 °C to 32.19 °C displayed `90°` with no thermometer beside it. The test now
+  rounds the way the display does — and always in Fahrenheit, so toggling the navbar between °C
+  and °F no longer moves which periods are marked. The daily and hourly strips mean different
+  things by it, which their tooltips now say: a day is marked when its *high* reaches 90 °F, an
+  hour when that hour does.
+- **The thermometer was clipped off the edge of narrow forecast tiles.** The glyph was sized on
+  the assumption of one emoji per tile, so the sky-and-thermometer pair overflowed the tile and
+  was cut off by it — inconsistently, since the 7-Day and Hourly strips scale their icons
+  differently. A marked tile now sizes the pair to fit.
+- **NWS forecasts from a `units=si` source were about 18° too cold.** The adapter read the unit
+  the API reported and then converted from Fahrenheit regardless, so a Celsius response was
+  converted a second time. It honors the reported unit now.
+- **The moon disappeared from the Weather Animation on cloudy nights.** The night moon and its
+  phase glyph were drawn only in the clear and partly-cloudy scenes, so an overcast, rainy, snowy
+  or stormy night showed no sky at all. The moon now sits behind the cloud in every night scene.
+  Daytime scenes are unchanged — a sun behind a rain cloud reads as the wrong weather, while a
+  moon behind one just reads as night.
+
 ## [0.12.0] - 2026-08-04
 
 ### Added

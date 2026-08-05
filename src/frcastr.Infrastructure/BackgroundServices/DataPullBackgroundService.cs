@@ -70,6 +70,12 @@ public class DataPullBackgroundService(
 
                 foreach (var (channel, rawValue, unit) in readings)
                 {
+                    // Temperature, humidity and dew point come from the station's own devices; a
+                    // regional figure on the same channel contaminates the history line and the
+                    // all-time records. Dropped here rather than in each adapter so a generic HTTP
+                    // source whose fieldMapping names one of these channels is covered too.
+                    if (ChannelLogPolicy.IsPullBlocked(channel)) continue;
+
                     var value = ChannelProcessing.ApplyAndValidate(channel, rawValue, source.Config);
                     if (value is null)
                     {

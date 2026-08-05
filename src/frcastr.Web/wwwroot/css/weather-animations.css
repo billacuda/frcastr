@@ -95,6 +95,36 @@
     50%      { filter: drop-shadow(0 0 10px rgba(226,232,240,.8)); }
 }
 
+/* ─── Night moon behind the cloud scenes ─────────────────────────────────────
+   Overcast, rain, snow and lightning are built around a cloud and carry no disc
+   of their own, so after dark they showed nothing of the moon. This tucks it
+   into the top-right of the frame, behind the weather — smaller than the disc in
+   the clear scene, since the cloud is still the subject. Emitted only at night;
+   the daytime scenes are untouched. .weather-anim is overflow:hidden, so a disc
+   sized past the corner is cropped rather than spilling. */
+.wa-sky-moon {
+    position: absolute;
+    top: 6%;
+    right: 8%;
+    z-index: 0;
+    pointer-events: none;
+}
+.wa-sky-moon .wa-moon-disc {
+    width: clamp(20px, 32cqmin, 120px);
+    height: clamp(20px, 32cqmin, 120px);
+    /* The glow rings the clear-sky disc wears would read as a second cloud here. */
+    box-shadow: 0 0 0 4px rgba(226,232,240,.10);
+}
+.wa-sky-moon .wa-moon-icon {
+    font-size: clamp(14px, 22cqmin, 84px);
+}
+/* The bolt is static, so it paints below any positioned sibling — including the
+   moon — unless it is positioned itself. It belongs in front of the storm. */
+.wa-lightning .wa-bolt {
+    position: relative;
+    z-index: 1;
+}
+
 /* ─── Partly Cloudy ──────────────────────────────────────────────────────── */
 .wa-partly-cloudy .wa-pc-scene {
     position: relative;

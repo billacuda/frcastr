@@ -699,8 +699,8 @@ public class AdminController(
         var cleared = 0;
         foreach (var record in candidates)
         {
-            var max = await FindExtremeAsync(record.ChannelName, record.DeviceId, highest: true, ct);
-            var min = await FindExtremeAsync(record.ChannelName, record.DeviceId, highest: false, ct);
+            var max = await weatherData.FindChannelExtremeAsync(record.ChannelName, record.DeviceId, highest: true, ct: ct);
+            var min = await weatherData.FindChannelExtremeAsync(record.ChannelName, record.DeviceId, highest: false, ct: ct);
 
             if (max is null || min is null)
             {
@@ -720,49 +720,6 @@ public class AdminController(
         await db.SaveChangesAsync(ct);
         return (candidates.Count, cleared);
     }
-
-    /// <summary>
-    /// The surviving high (or low) for a channel on a device, across both raw readings and rolled-up
-    /// aggregates. Once raw readings age out, an aggregate is the only remaining evidence of an
-    /// extreme, so ignoring them would walk records back to whatever the retention window still
-    /// holds. An aggregate can only date the extreme to the start of its bucket — the exact minute
-    /// went with the raw rows — which is the best available answer and still beats a stale one.
-    /// </summary>
-    private async Task<RecordExtreme?> FindExtremeAsync(
-        string channel, int? deviceId, bool highest, CancellationToken ct)
-    {
-        // Written as two branches because EF renders `DeviceId == @p` with a null parameter as
-        // `= NULL`, which matches no row — a station-wide record would silently find nothing.
-        var readings = deviceId is null
-            ? db.WeatherReadings.Where(r => r.ChannelName == channel && r.DeviceId == null)
-            : db.WeatherReadings.Where(r => r.ChannelName == channel && r.DeviceId == deviceId);
-
-        var aggregates = deviceId is null
-            ? db.WeatherReadingAggregates.Where(a => a.ChannelName == channel && a.DeviceId == null)
-            : db.WeatherReadingAggregates.Where(a => a.ChannelName == channel && a.DeviceId == deviceId);
-
-        var fromReadings = await (highest
-                ? readings.OrderByDescending(r => r.Value).ThenBy(r => r.Timestamp)
-                : readings.OrderBy(r => r.Value).ThenBy(r => r.Timestamp))
-            .Select(r => new RecordExtreme(r.Value, r.Timestamp, r.SourceId))
-            .FirstOrDefaultAsync(ct);
-
-        var fromAggregates = await (highest
-                ? aggregates.OrderByDescending(a => a.Max).ThenBy(a => a.PeriodStart)
-                    .Select(a => new RecordExtreme(a.Max, a.PeriodStart, a.SourceId))
-                : aggregates.OrderBy(a => a.Min).ThenBy(a => a.PeriodStart)
-                    .Select(a => new RecordExtreme(a.Min, a.PeriodStart, a.SourceId)))
-            .FirstOrDefaultAsync(ct);
-
-        if (fromReadings is null) return fromAggregates;
-        if (fromAggregates is null) return fromReadings;
-
-        return highest
-            ? (fromAggregates.Value > fromReadings.Value ? fromAggregates : fromReadings)
-            : (fromAggregates.Value < fromReadings.Value ? fromAggregates : fromReadings);
-    }
-
-    private sealed record RecordExtreme(decimal Value, DateTime At, int? SourceId);
 
     /// <summary>
     /// Deletes in chunks. A year of raw readings runs to millions of rows, and a single unbounded

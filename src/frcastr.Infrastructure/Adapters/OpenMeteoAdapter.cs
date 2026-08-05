@@ -30,9 +30,11 @@ public class OpenMeteoAdapter(
         if (lat is null) return [];
 
         var http = httpClientFactory.CreateClient("openmeteo");
+        // Temperature, humidity and cloud cover are no longer requested: the first two are the
+        // devices' to report and would be dropped before storage anyway, and nothing reads a
+        // stored cloud coverage since the Weather Animation widget moved to the forecast.
         var url = $"/v1/forecast?latitude={lat}&longitude={lon}&timezone=UTC" +
-                  "&current=temperature_2m,relative_humidity_2m,surface_pressure," +
-                  "cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
+                  "&current=surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m" +
                   "&wind_speed_unit=kmh&temperature_unit=celsius";
         try
         {
@@ -41,10 +43,7 @@ public class OpenMeteoAdapter(
             if (c is null) return [];
 
             var readings = new List<(string, decimal, string)>();
-            if (c.Temperature  != null) readings.Add(("temperature.outdoor", (decimal)c.Temperature.Value,              "°C"));
-            if (c.Humidity     != null) readings.Add(("humidity.outdoor",    (decimal)c.Humidity.Value,                 "%"));
             if (c.Pressure     != null) readings.Add(("pressure",            (decimal)c.Pressure.Value,                 "hPa"));
-            if (c.CloudCover   != null) readings.Add(("cloud.coverage",      (decimal)c.CloudCover.Value,               "%"));
             if (c.WindSpeed    != null) readings.Add(("wind.speed",          Math.Round((decimal)c.WindSpeed.Value, 2),  "km/h"));
             if (c.WindDirection!= null) readings.Add(("wind.direction",      (decimal)c.WindDirection.Value,            "°"));
             if (c.WindGust     != null) readings.Add(("wind.gust",           Math.Round((decimal)c.WindGust.Value, 2),  "km/h"));
@@ -231,10 +230,7 @@ public class OpenMeteoAdapter(
 
     private sealed class OmCurrent
     {
-        [JsonPropertyName("temperature_2m")]       public double? Temperature   { get; init; }
-        [JsonPropertyName("relative_humidity_2m")] public double? Humidity      { get; init; }
         [JsonPropertyName("surface_pressure")]     public double? Pressure      { get; init; }
-        [JsonPropertyName("cloud_cover")]          public double? CloudCover    { get; init; }
         [JsonPropertyName("wind_speed_10m")]       public double? WindSpeed     { get; init; }
         [JsonPropertyName("wind_direction_10m")]   public double? WindDirection { get; init; }
         [JsonPropertyName("wind_gusts_10m")]       public double? WindGust      { get; init; }

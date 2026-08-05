@@ -3,6 +3,7 @@ using frcastr.Core.Enums;
 using frcastr.Core.Interfaces;
 using frcastr.Core.Models;
 using frcastr.Infrastructure.Data;
+using frcastr.Infrastructure.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace frcastr.Infrastructure.Services;
@@ -246,14 +247,60 @@ public class WeatherDataService(
         IQueryable<T> Cap<T>(IQueryable<T> q) =>
             maxPointsPerTier is int max ? q.Take(max) : q;
 
+        // A pull source may no longer write temperature, humidity or dew point, but everything it
+        // wrote before that is still in these tables and would keep drawing a regional figure on
+        // the station's own line. It is left out here for the same reason it no longer holds an
+        // all-time record. Applied in SQL, ahead of Cap, so the row budget is spent on points that
+        // will actually be plotted.
+        var pullSourceIds = await dbContext.DataSources
+            .Where(s => s.Type == DataSourceType.Pull || s.Type == DataSourceType.AirQuality)
+            .Select(s => s.Id)
+            .ToListAsync(ct);
+
+        // Spelled out rather than calling ChannelLogPolicy — EF cannot see through a method — and
+        // once per table, since the two share no base type. StartsWith renders as LIKE
+        // 'temperature.%', case-insensitive under the collations frcastr runs on, which is the same
+        // leniency IsPullBlocked has. Keep the prefixes in step with that class.
+        //
+        // Cloud coverage and wind direction go only when the caller asked for everything: a compass
+        // bearing has no meaningful line and cloud coverage is not collected any more, so neither
+        // belongs in a view that draws whatever exists — the same cut the records table and the
+        // Monthly picker make. A request that names one still gets it, so a chart widget pointed at
+        // wind direction keeps working.
+        IQueryable<WeatherReading> Visible(IQueryable<WeatherReading> q)
+        {
+            q = q.Where(r => !(pullSourceIds.Contains(r.SourceId)
+                            && (r.ChannelName.StartsWith("temperature.")
+                             || r.ChannelName.StartsWith("humidity.")
+                             || r.ChannelName.StartsWith("dewpoint."))));
+
+            return allChannels
+                ? q.Where(r => r.ChannelName != "cloud.coverage"
+                            && !r.ChannelName.StartsWith("wind.direction"))
+                : q;
+        }
+
+        IQueryable<WeatherReadingAggregate> VisibleAgg(IQueryable<WeatherReadingAggregate> q)
+        {
+            q = q.Where(a => !(pullSourceIds.Contains(a.SourceId)
+                            && (a.ChannelName.StartsWith("temperature.")
+                             || a.ChannelName.StartsWith("humidity.")
+                             || a.ChannelName.StartsWith("dewpoint."))));
+
+            return allChannels
+                ? q.Where(a => a.ChannelName != "cloud.coverage"
+                            && !a.ChannelName.StartsWith("wind.direction"))
+                : q;
+        }
+
         // Raw tier: [max(start, rawCutoff), end]
         var rawStart = start > rawCutoff ? start : rawCutoff;
         if (rawStart < end)
         {
-            var rows = await Cap(dbContext.WeatherReadings
+            var rows = await Cap(Visible(dbContext.WeatherReadings
                 .Where(r => (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
-                         && r.Timestamp >= rawStart && r.Timestamp <= end)
+                         && r.Timestamp >= rawStart && r.Timestamp <= end))
                 .OrderBy(r => r.Timestamp)
                 .Select(r => new { r.Timestamp, r.ChannelName, r.Value, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
@@ -267,11 +314,11 @@ public class WeatherDataService(
         var hourlyEnd = end < rawCutoff ? end : rawCutoff;
         if (hourlyStart < hourlyEnd)
         {
-            var rows = await Cap(dbContext.WeatherReadingAggregates
+            var rows = await Cap(VisibleAgg(dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Hourly
                          && (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
-                         && r.PeriodStart >= hourlyStart && r.PeriodStart < hourlyEnd)
+                         && r.PeriodStart >= hourlyStart && r.PeriodStart < hourlyEnd))
                 .OrderBy(r => r.PeriodStart)
                 .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
@@ -284,11 +331,11 @@ public class WeatherDataService(
         var dailyEnd = end < hourlyCutoff ? end : hourlyCutoff;
         if (start < dailyEnd)
         {
-            var rows = await Cap(dbContext.WeatherReadingAggregates
+            var rows = await Cap(VisibleAgg(dbContext.WeatherReadingAggregates
                 .Where(r => r.Granularity == AggregationGranularity.Daily
                          && (allChannels || channelList.Contains(r.ChannelName))
                          && (!filterDevices || (r.DeviceId != null && deviceIds.Contains(r.DeviceId.Value)))
-                         && r.PeriodStart >= start && r.PeriodStart < dailyEnd)
+                         && r.PeriodStart >= start && r.PeriodStart < dailyEnd))
                 .OrderBy(r => r.PeriodStart)
                 .Select(r => new { r.PeriodStart, r.ChannelName, r.Avg, r.Min, r.Max, r.Count, r.Unit, r.SourceId, r.DeviceId }))
                 .ToListAsync(ct);
@@ -363,9 +410,22 @@ public class WeatherDataService(
         catch (Exception) { tz = TimeZoneInfo.Utc; }
         var offsetMinutes = tz.GetUtcOffset(DateTime.UtcNow).TotalMinutes;
 
+        // The same cut the Period Summary and the all-time records make: a monthly mean of the
+        // station's temperature must not average in a regional figure a pull source once wrote to
+        // that channel. Only queried for a channel the policy covers — every other channel is
+        // legitimately a pull source's to report.
+        var excludedSourceIds = ChannelLogPolicy.IsPullBlocked(channelName)
+            ? await dbContext.DataSources
+                .Where(s => s.Type == DataSourceType.Pull || s.Type == DataSourceType.AirQuality)
+                .Select(s => s.Id)
+                .ToListAsync(ct)
+            : [];
+
         var rawQuery = dbContext.WeatherReadings
             .Where(r => r.ChannelName == channelName && r.Timestamp >= rawCutoff);
         if (deviceId is not null) rawQuery = rawQuery.Where(r => r.DeviceId == deviceId);
+        if (excludedSourceIds.Count > 0)
+            rawQuery = rawQuery.Where(r => !excludedSourceIds.Contains(r.SourceId));
 
         var rawDays = (await rawQuery
             .Select(r => new { Local = r.Timestamp.AddMinutes(offsetMinutes), r.Value })
@@ -393,6 +453,8 @@ public class WeatherDataService(
             if (from is not null) q = q.Where(a => a.PeriodStart >= from);
             if (to is not null) q = q.Where(a => a.PeriodStart < to);
             if (deviceId is not null) q = q.Where(a => a.DeviceId == deviceId);
+            if (excludedSourceIds.Count > 0)
+                q = q.Where(a => !excludedSourceIds.Contains(a.SourceId));
 
             // Weighted by Count the same way the hourly → daily rollup weights its averages, so a
             // sparse hour cannot drag a day's mean around.
@@ -544,6 +606,58 @@ public class WeatherDataService(
         }
 
         await dbContext.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The surviving high (or low) for a channel on a device, across both raw readings and
+    /// rolled-up aggregates. Once raw readings age out, an aggregate is the only remaining evidence
+    /// of an extreme, so ignoring them would walk records back to whatever the retention window
+    /// still holds. An aggregate can only date the extreme to the start of its bucket — the exact
+    /// minute went with the raw rows — which is the best available answer and still beats a stale
+    /// one.
+    /// </summary>
+    public async Task<ChannelExtreme?> FindChannelExtremeAsync(
+        string channelName, int? deviceId, bool highest,
+        IReadOnlyCollection<int>? excludeSourceIds = null, CancellationToken ct = default)
+    {
+        // Written as two branches because EF renders `DeviceId == @p` with a null parameter as
+        // `= NULL`, which matches no row — a station-wide record would silently find nothing.
+        var readings = deviceId is null
+            ? dbContext.WeatherReadings.Where(r => r.ChannelName == channelName && r.DeviceId == null)
+            : dbContext.WeatherReadings.Where(r => r.ChannelName == channelName && r.DeviceId == deviceId);
+
+        var aggregates = deviceId is null
+            ? dbContext.WeatherReadingAggregates.Where(a => a.ChannelName == channelName && a.DeviceId == null)
+            : dbContext.WeatherReadingAggregates.Where(a => a.ChannelName == channelName && a.DeviceId == deviceId);
+
+        if (excludeSourceIds is { Count: > 0 })
+        {
+            // Aggregates bucket by source as well as channel and device, so a rolled-up row belongs
+            // to exactly one source and drops out as cleanly as a raw reading does.
+            var excluded = excludeSourceIds.ToList();
+            readings = readings.Where(r => !excluded.Contains(r.SourceId));
+            aggregates = aggregates.Where(a => !excluded.Contains(a.SourceId));
+        }
+
+        var fromReadings = await (highest
+                ? readings.OrderByDescending(r => r.Value).ThenBy(r => r.Timestamp)
+                : readings.OrderBy(r => r.Value).ThenBy(r => r.Timestamp))
+            .Select(r => new ChannelExtreme(r.Value, r.Timestamp, r.SourceId))
+            .FirstOrDefaultAsync(ct);
+
+        var fromAggregates = await (highest
+                ? aggregates.OrderByDescending(a => a.Max).ThenBy(a => a.PeriodStart)
+                    .Select(a => new ChannelExtreme(a.Max, a.PeriodStart, a.SourceId))
+                : aggregates.OrderBy(a => a.Min).ThenBy(a => a.PeriodStart)
+                    .Select(a => new ChannelExtreme(a.Min, a.PeriodStart, a.SourceId)))
+            .FirstOrDefaultAsync(ct);
+
+        if (fromReadings is null) return fromAggregates;
+        if (fromAggregates is null) return fromReadings;
+
+        return highest
+            ? (fromAggregates.Value > fromReadings.Value ? fromAggregates : fromReadings)
+            : (fromAggregates.Value < fromReadings.Value ? fromAggregates : fromReadings);
     }
 
     /// <summary>Maps a device key from a channel key ("greenhouse-01") to its Devices.Id.</summary>

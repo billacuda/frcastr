@@ -39,4 +39,15 @@ public interface IWeatherDataService
     /// </summary>
     Task UpdateChannelRecordsAsync(IReadOnlyCollection<(string ChannelName, decimal Value)> readings,
         DateTime timestamp, int sourceId, int? deviceId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// The highest (or lowest) value a channel still has evidence for on a device, across both raw
+    /// readings and rolled-up aggregates. Null when nothing is left behind it.
+    /// <para>
+    /// <paramref name="excludeSourceIds"/> hides sources that are no longer allowed to hold the
+    /// record — the readings stay in the table and on history graphs, they just stop counting.
+    /// </para>
+    /// </summary>
+    Task<ChannelExtreme?> FindChannelExtremeAsync(string channelName, int? deviceId, bool highest,
+        IReadOnlyCollection<int>? excludeSourceIds = null, CancellationToken ct = default);
 }

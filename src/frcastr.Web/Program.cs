@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.DataProtection;
 using frcastr.Core.Auth;
 using frcastr.Core.Entities;
+using frcastr.Core.Enums;
 using frcastr.Core.Interfaces;
 using frcastr.Infrastructure.Adapters;
 using frcastr.Infrastructure.Auth;
 using frcastr.Infrastructure.BackgroundServices;
 using frcastr.Infrastructure.Data;
+using frcastr.Infrastructure.Helpers;
 using frcastr.Infrastructure.Repositories;
 using frcastr.Infrastructure.Services;
 using frcastr.Web.Health;
@@ -120,6 +122,9 @@ builder.Services.AddHostedService<ForecastRefreshBackgroundService>();
 builder.Services.AddHostedService<AlertsRefreshBackgroundService>();
 builder.Services.AddHostedService<SensorOfflineBackgroundService>();
 builder.Services.AddHostedService<WebhookAlertBackgroundService>();
+// One-shot, guarded by a settings key: repairs the all-time records a pull source is no longer
+// allowed to hold. A no-op on every boot after the first.
+builder.Services.AddHostedService<PullChannelCleanupBackgroundService>();
 
 // ── HTTP clients ──────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient("nws", client =>
@@ -288,6 +293,46 @@ using (var _seedScope = app.Services.CreateScope())
             .GroupBy(r => new { r.ChannelName, r.DeviceId })
             .Select(g => new { g.Key.ChannelName, g.Key.DeviceId, LastAt = g.Max(r => r.Timestamp) })
             .ToList();
+
+        // A channel a pull source used to write and no longer may would otherwise be seeded from
+        // its final internet reading, go quiet forever, and be reported as an offline sensor for
+        // the life of the install. For those channels the seed comes from the last reading a
+        // device produced instead, and a pair with no device reading at all is not seeded — there
+        // is no sensor there to be offline. A device genuinely reporting temperature.outdoor is
+        // unaffected.
+        var _blockedChannels = _latest
+            .Where(x => ChannelLogPolicy.IsPullBlocked(x.ChannelName))
+            .Select(x => x.ChannelName)
+            .Distinct()
+            .ToList();
+
+        if (_blockedChannels.Count > 0)
+        {
+            var _pullSourceIds = _db.DataSources
+                .Where(s => s.Type == DataSourceType.Pull || s.Type == DataSourceType.AirQuality)
+                .Select(s => s.Id)
+                .ToList();
+
+            var _deviceLatest = _db.WeatherReadings
+                .Where(r => _blockedChannels.Contains(r.ChannelName)
+                         && !_pullSourceIds.Contains(r.SourceId))
+                .GroupBy(r => new { r.ChannelName, r.DeviceId })
+                .Select(g => new { g.Key.ChannelName, g.Key.DeviceId, LastAt = g.Max(r => r.Timestamp) })
+                .ToList()
+                .ToDictionary(x => (x.ChannelName, x.DeviceId), x => x.LastAt);
+
+            _latest = _latest
+                .Select(x =>
+                {
+                    if (!ChannelLogPolicy.IsPullBlocked(x.ChannelName)) return x;
+                    return _deviceLatest.TryGetValue((x.ChannelName, x.DeviceId), out var deviceAt)
+                        ? new { x.ChannelName, x.DeviceId, LastAt = deviceAt }
+                        : null;
+                })
+                .Where(x => x is not null)
+                .Select(x => x!)
+                .ToList();
+        }
 
         _status.Seed(_latest.Select(x =>
             new KeyValuePair<StaleChannel, DateTime>(
