@@ -2,6 +2,19 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.14.0] - 2026-09-11
+
+### Fixed
+- **The Weather Animation widget could get stuck on rain (or lightning) for days after the sky
+  cleared up.** It let a live rain gauge or lightning sensor outrank the forecast, but never
+  checked whether that sensor's reading was actually still current — a channel that went quiet
+  left its last stored value in place (readings are looked back up to 7 days), so a dead or
+  disconnected rain gauge's last nonzero reading kept overriding a perfectly sunny forecast
+  indefinitely. Restarting the service didn't help, since the stuck value lived in the database,
+  not in memory. The widget now checks the same staleness list the dashboard already uses to gray
+  out widgets, and falls back to the forecast-based sky when the sensor reading behind it is
+  stale.
+
 ## [0.13.0] - 2026-08-04
 
 ### Changed

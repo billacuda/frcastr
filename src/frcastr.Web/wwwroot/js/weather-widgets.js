@@ -287,9 +287,18 @@ window.WeatherWidgets = (function () {
         if (config.conditionSource === 'manual' && config.manualCondition) {
             return 'wa-' + config.manualCondition;
         }
-        var precip       = Number((readings['rainfall']             || {}).value || 0);
+        // A sensor only outranks the forecast while it is actually reporting. A stale rain gauge
+        // (dead device, disconnected console) leaves its last DB row in place indefinitely — up to
+        // the 7-day "current reading" horizon — so without this check the animation would latch
+        // onto whatever that last value was (e.g. stuck on rain through days of sun) and a service
+        // restart would not clear it, since the value lives in the database, not in memory.
+        var stale = (data && data.current && data.current.staleChannels) || [];
+        function fresh(ch) { return stale.indexOf(ch) < 0; }
+
+        var precip       = fresh('rainfall')
+            ? Number((readings['rainfall']             || {}).value || 0) : 0;
         var temp         = val({ value: (readings['temperature.outdoor'] || {}).value || 15 });
-        var hasLightning = readings['lightning'] != null;
+        var hasLightning = fresh('lightning') && readings['lightning'] != null;
         var wind         = Number((readings['wind.speed']           || {}).value || 0);
         // A sensor outranks a forecast: rain in the gauge is rain, whatever the sky was predicted
         // to do. The forecast only gets to decide the sky when nothing is falling.
