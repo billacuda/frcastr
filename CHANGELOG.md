@@ -4,7 +4,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.14.0] - 2026-09-11
 
-### Fixed
+### 🛠️ Fixed
 - **The Weather Animation widget could get stuck on rain (or lightning) for days after the sky
   cleared up.** It let a live rain gauge or lightning sensor outrank the forecast, but never
   checked whether that sensor's reading was actually still current — a channel that went quiet
@@ -17,7 +17,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.13.0] - 2026-08-04
 
-### Changed
+### ⚙️ Changed
 - **Temperature, humidity and dew point are no longer logged from internet sources.** A Pull or
   AirQuality source writing `temperature.*`, `humidity.*` or `dewpoint.*` was feeding the same
   station-wide channels the MQTT sensors feed, so a regional figure fetched off the web landed on
@@ -43,7 +43,7 @@ All notable changes to frcastr are documented here.
   sensors — a real reading beats a forecast — and a station with no forecast source configured
   gets the sun, rain and wind scenes as before.
 
-### Fixed
+### 🛠️ Fixed
 - **The hot-period thermometer showed on some 90° tiles and not others.** The marker tested the
   raw Celsius value against 32.2 °C while the tile printed a rounded Fahrenheit number, so
   everything from 32.0 °C to 32.19 °C displayed `90°` with no thermometer beside it. The test now
@@ -66,7 +66,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.12.0] - 2026-08-04
 
-### Added
+### ➕ Added
 - **A "Two columns on phones" choice per dashboard.** The dashboard menu carries a switch that
   pairs widgets on a phone the way they sit on the desktop: two side by side stay side by side,
   while a widget alone in a desktop row still spans the width. It is saved against the dashboard
@@ -81,7 +81,7 @@ All notable changes to frcastr are documented here.
   tile, the hour's own temperature for an hourly one. The threshold is held in Celsius (32.2 °C),
   so the same periods stay marked when the navbar toggles between °C and °F.
 
-### Fixed
+### 🛠️ Fixed
 - **Every widget was a squashed letterbox on a phone.** Below 768 px the grid gave each widget the
   full width but kept its *desktop* row height, and then calibrated cell height so the whole
   desktop layout squeezed into one phone viewport — a widget that was square on a monitor came out
@@ -121,7 +121,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.11.0] - 2026-08-03
 
-### Security
+### 🔒 Security
 - **Data source credentials are encrypted at rest.** A source's `Config` holds the MQTT broker
   password, every upstream API key and the hash of a push source's key, and it sat in the database
   in the clear. It is now encrypted with ASP.NET Data Protection through an EF value converter, so
@@ -143,7 +143,7 @@ All notable changes to frcastr are documented here.
   ring only protected auth cookies, not once stored secrets depend on it. **Upgrading signs every
   user out once**, as existing cookies were issued under the old scope.
 
-### Fixed
+### 🛠️ Fixed
 - **`hasConfig` would have reported every data source as configured** once `Config` became
   ciphertext. It tested `Config != ""` in SQL, and Data Protection is randomised — the same
   plaintext encrypts differently every time, so the comparison encrypted a fresh empty string on
@@ -152,7 +152,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.10.0] - 2026-08-03
 
-### Fixed
+### 🛠️ Fixed
 - **Hourly and daily aggregates were built from a sliver of their bucket, and the rest of the raw
   readings were deleted unaggregated.** Both aggregation services took their retention cutoff as
   `UtcNow.AddDays(-retention)` — an instant landing mid-hour — but grouped readings into whole-hour
@@ -190,7 +190,7 @@ All notable changes to frcastr are documented here.
 - **Current conditions grouped the entire readings table** on every cache miss, every fifteen
   seconds. The scan is now bounded to a recent window.
 
-### Changed
+### ⚙️ Changed
 - **Purging history recalculates the all-time records it invalidates.** A record whose high or low
   was set inside the purged range used to keep standing on a reading that no longer existed. Any
   affected record is now recomputed from what survived — across both raw readings and aggregates,
@@ -215,7 +215,7 @@ All notable changes to frcastr are documented here.
   shared key, so a typo is reported back rather than silently creating a device. Readings without
   the key stay station-wide, which is what existing clients send.
 
-### Security
+### 🔒 Security
 - **CSRF protection across the JSON APIs.** Every non-GET action on every controller now validates
   an antiforgery token; the API-key ingest routes opt out, having no session to forge against. A
   rejected token returns an explanation rather than an empty 400, since a stale one is the ordinary
@@ -257,7 +257,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.9.0] - 2026-07-31
 
-### Added
+### ➕ Added
 - **Monthly Data**, a new History tab between Period Summary and All-Time Records. All twelve
   months across the top, with that month's **avg high**, **avg**, **avg low** and the number of
   **days** the averages stand on beneath each one. A year selector switches between the years on
@@ -278,7 +278,7 @@ All notable changes to frcastr are documented here.
   the unit letter to fit; a day down to its last period has no spread left and still renders as the
   single figure it is.
 
-### Changed
+### ⚙️ Changed
 - **Dew point reads in whole degrees** on the humidity and temperature tiles. It is a derived
   companion to the reading the tile is actually about, and a tenths digit on it competed with the
   value above it.
@@ -287,7 +287,7 @@ All notable changes to frcastr are documented here.
   `temperature.indo…` — exactly the part that tells two sensors apart. It now grows to the widest
   channel, up to a ceiling that keeps a pathological label from crowding out the chart.
 
-### Fixed
+### 🛠️ Fixed
 - **Chart tooltips named the value but never the moment.** Scatter datasets are `{x, y}` objects
   with no chart labels behind them, so Chart.js had nothing to put in the tooltip title and left it
   empty — a point could be read off but not placed in time. Each point now carries its own local
@@ -295,7 +295,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.8.2] - 2026-07-31
 
-### Fixed
+### 🛠️ Fixed
 - **The Period Summary chart drew humidity as a staircase.** Sensors report relative humidity to a
   tenth of a percent and it is logged that way, but `channelConv()` rounded the series to whole
   percent before plotting, quantizing every point onto an integer step and flattening the real
@@ -307,7 +307,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.8.1] - 2026-07-31
 
-### Fixed
+### 🛠️ Fixed
 - **Timestamps showed UTC instead of local time**, putting an evening record or a recent sighting on
   tomorrow's date. Two distinct causes, both now fixed everywhere they appear:
   - `/api/weather/records` served timestamps with no zone. They are stored in UTC but read back
@@ -328,7 +328,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.8.0] - 2026-07-28
 
-### Added
+### ➕ Added
 - **Per-widget padding and text size**: the Add and Edit Widget dialogs gained two sliders —
   **Padding** (0-16px) and **Text size** (60-200%) — saved into the widget's config alongside the
   existing custom text color. Both ride CSS custom properties (`--widget-pad`,
@@ -341,7 +341,7 @@ All notable changes to frcastr are documented here.
   formatter instead, defaulting to the temperature treatment the temperature tiles share, so AQI can
   render whole-number extremes with no unit conversion and no degree sign.
 
-### Fixed
+### 🛠️ Fixed
 - **Forecast widgets silently dropped periods they were configured to show.** Both the daily and
   hourly renderers capped the list a second time by measured width — one item per 72px (daily) or
   64px (hourly) — so a widget set to 7 days rendered 5 on a tablet-sized dashboard with no
@@ -353,7 +353,7 @@ All notable changes to frcastr are documented here.
   say nothing. `/api/weather/records` now filters it out. The rows stay in the database and are
   still written — they are just not served.
 
-### Changed
+### ⚙️ Changed
 - **Tighter widget padding and larger forecast type.** Widget padding drops from 8px to 4px.
   `.widget-body` is the container-query context that every value inside a widget scales against, so
   the reclaimed space goes straight into larger readings on the outdoor, indoor, air quality,
@@ -369,7 +369,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.7.0] - 2026-07-28
 
-### Added
+### ➕ Added
 - **DS18B20 sensor support** in the ESP32 reference firmware (`esp32/frcastr-sensor/`): a new
   `SENSOR_DS18B20` option alongside the existing SHT3x and DHT22 choices, wired over 1-Wire via the
   `OneWire`/`DallasTemperature` libraries. DS18B20 is temperature-only, so its state payload omits
@@ -383,36 +383,36 @@ All notable changes to frcastr are documented here.
   for secondary unit labels inside widgets. Off by default, so existing dashboards are unaffected
   until turned on.
 
-### Fixed
+### 🛠️ Fixed
 - **All-Time Records ignored every display-unit setting**: the table printed the canonical stored
   value for every channel — °C, km/h, hPa, mm — with no conversion and no unit suffix, regardless of
   the navbar C/F toggle or the wind/pressure/rain units chosen in Settings. It's the one place in the
   app that didn't already do this; the Period Summary chart converts every point through the same
   `channelConv`/`convertPoint` helpers, which the Records table now reuses.
 
-### Changed
+### ⚙️ Changed
 - **Build against .NET 10.0.10** — bumped the pinned `Microsoft.EntityFrameworkCore.*`, `Microsoft.AspNetCore.Identity.EntityFrameworkCore`, `Microsoft.AspNetCore.Identity.UI` and `Microsoft.AspNetCore.OpenApi` package references from 10.0.9 to 10.0.10, and the `dotnet-ef` local tool in `.config/dotnet-tools.json` to match. The direct `Microsoft.OpenApi` 2.11.0 pin from 0.6.2 stays and is still doing work: `Microsoft.AspNetCore.OpenApi 10.0.10` still declares the vulnerable `Microsoft.OpenApi 2.0.0` transitively.
 
 ## [0.6.2] - 2026-07-26
 
-### Security
+### 🔒 Security
 - **Pinned `Microsoft.OpenApi` to 2.11.0** to clear CVE-2026-49451 (GHSA-v5pm-xwqc-g5wc, high / CVSS 7.5): a circular schema reference sends the document reader into uncontrolled recursion and terminates the process by stack overflow. The vulnerable 2.0.0 arrived transitively through `Microsoft.AspNetCore.OpenApi 10.0.9`, and upgrading that package does not help — even its newest patch still declares `Microsoft.OpenApi 2.0.0` — so the fix is a direct reference in `frcastr.Web`. The advisory patches both the 2.x line (2.7.5) and the 3.x line (3.5.4); 2.x is the one ASP.NET Core 10 is built and tested against, and 3.x is a major release adding OpenAPI 3.1 support, so this stays on 2.x. Real exposure was theoretical: frcastr only *generates* an OpenAPI document from its own endpoints and never parses one supplied by anyone, and the flaw is in the reader.
 
 ## [0.6.1] - 2026-07-26
 
-### Fixed
+### 🛠️ Fixed
 - **Humidity vanished from a temperature tile bound to a device's own channel**: companion channels (humidity, dew point) were resolved from the widget's *canonical* channel rather than the one it is actually bound to, so a tile on `temperature@indoor-01` — what a source publishes when its `fieldMapping` names bare `temperature`/`humidity` instead of a room — looked for `humidity.indoor@indoor-01` and then `humidity.indoor`, neither of which exists, and showed no humidity at all. The outdoor tile hid the same bug behind a wrong answer: `humidity.outdoor` from the pull source existed, so the sensor's tile paired its own temperature with the NWS station's humidity. Companions are now derived by swapping the leading segment of the bound channel (`temperature@indoor-01` → `humidity@indoor-01`, `temperature.attic` → `humidity.attic`) and resolved most-specific first — the bound channel's companion on the bound device, then the canonical companion on that device, then the same two station-wide. Widgets bound to canonical channels resolve exactly as before.
 
 ## [0.6.0] - 2026-07-26
 
-### Added
+### ➕ Added
 - **Admin → Data, with a history purge**: a new page showing what is stored — row counts and the oldest/newest timestamp for raw readings, hourly and daily aggregates, all-time records, and the forecast and alert caches — plus a purge that removes everything or everything before a date, per store. Retention was passive until now (`Weather.*RetentionDays` rolling data off in the background), so recovering from a miscalibrated sensor or a test rig meant writing SQL by hand. **Preview** reports exactly what would go before anything is deleted, and the purge button stays disabled until `PURGE` is typed. Deletes run in 50,000-row batches, because one unbounded `DELETE` over a year of readings escalates to a table lock and stalls ingestion. Only the six weather stores are touched — devices, data sources, widgets, dashboard layouts, users, settings and the audit log are never in scope. Under a date cutoff, an all-time record is removed only when its high *and* its low both predate the cutoff, so a record still anchored by a surviving reading stays. Audit-logged as `Data.Purged`.
 - **Water Temperature widget** for a pool or spa: the reading sits over an animated water scene that changes with it — icy below 77 °F, cool to 84 °F, open water to 90 °F, steamy above. Thresholds are editable per widget, so a hot tub and a cold plunge can each use their own. They are stored in °C to match how readings are stored, and shown in whatever unit the site is currently displaying. Reports on the new canonical `temperature.water` channel, which also gets tighter sanity bounds (−5 – 60 °C) than the `temperature.*` family fallback.
 - **Channel display labels**: a channel can be shown under a friendly name — call `temperature.indoor` "mqtt" on screen — without renaming it. Channel names are load-bearing (sanity bounds match on the `temperature.` prefix, the calculated channels look up `temperature.indoor`/`.outdoor` by exact name, and °C/°F conversion tests the same prefix), so the stored name stays canonical and the label is layered on for display only. Edited under the new **Admin → Channels** page, which lists every known channel key with its current reading, so a single device's key (`temperature.indoor@outdoor-01`) can be labeled without touching the channel the rest of the station shares. Resolution goes most-specific first: exact key, then canonical channel, then the key itself. Labels appear in the History sidebar, chart and records table and in the widget channel pickers, where the option's *value* stays the channel key — widgets bind by key, so clearing a label can never break a widget. The CSV export keeps canonical names, since two exports of the same data must not disagree.
 - **Device column in the CSV export and the All-Time Records tab**, and a warning on **Admin → Devices** when two enabled devices report the same canonical channel — the condition behind merged history and records that overwrite each other, which nothing surfaced until now.
 - **Test mode** for previewing dashboards: an administrators-only panel that overlays simulated readings on the dashboard so layouts, animations and new widgets can be exercised without waiting for the weather. Any channel can be set, including ones no sensor reports yet, and scenario presets (Freezing, Hot & humid, Storm, Pool day, Cold plunge, Hot tub) fill several at once. Nothing is recorded and nothing is sent: the module only mutates the in-memory poll result the dashboard is about to draw, and state lives in `localStorage`. A banner stays on screen the whole time it is active. The gate is server-side — the script and panel render only inside `@@if (User.IsInRole("Administrator"))`, so a non-admin is never sent either and `window.TestMode` does not exist for them.
 
-### Fixed
+### 🛠️ Fixed
 - **Deleting a device returned a 500**: all-time records are unique per `(ChannelName, DeviceId)` on an unfiltered index — SQL Server treats NULLs as equal, which is what keeps exactly one station-wide row per channel — while the record FK is `ON DELETE SET NULL`. A device that shared a channel with a station-wide row (any channel a pull source also reports) had its record nulled straight into that row, so the delete violated the unique index. Records are now folded into the station-wide row explicitly, keeping the wider pair of extremes with their own timestamps and sources, and the whole delete runs in one transaction. Aggregates that the FK turns station-wide are collapsed where they now duplicate a period, the same way a channel re-key does, so the History chart cannot draw one period twice.
 - **History drew two devices as one line**: selecting `temperature.indoor` charted the indoor and outdoor sensors as a single series. The readings were always stored per device, but nothing downstream used it — the history API never resolved the device id, and the page bucketed points by channel name alone. History series are now keyed `channel@device`, matching how the dashboard already addresses readings, and the API returns a device lookup for the ids present in the result rather than stamping a key onto every one of tens of thousands of rows. Station-wide channels from pull sources keep their bare names.
 - **The History page remembers what you left it on**: hidden channels, per-series colors, the period and date, and the active tab all persist in `localStorage`, the same store the dashboard uses for layouts. Previously every reload re-ticked every channel and reset the colors. A hidden series is hidden as its dataset is built rather than after the first draw, so it no longer flashes in and disappears, and stored keys that no longer exist are ignored.
@@ -421,7 +421,7 @@ All notable changes to frcastr are documented here.
 
 ## [0.5.0] - 2026-07-26
 
-### Added
+### ➕ Added
 - **Multi-device MQTT ingestion**: a single MQTT data source can now serve any number of sensor devices. A new `topicPattern` config key (e.g. `frcastr/{device}/state`) extracts a device id from the topic, and the subscribe filter is derived from it automatically when `topic` is omitted, so the subscription and the matcher cannot drift apart. Previously `channelMapping` was an exact-topic dictionary lookup, so wildcard subscriptions connected fine but every message was silently discarded unless its full literal topic was a key in the map — meaning each device needed its own data source row and hand-enumerated topics.
 - **`Device` entity**: devices auto-register on their first message (disable with `"autoRegisterDevices": false`) and carry a friendly name, location, model, firmware version, last-seen timestamp and per-device offline threshold. `WeatherReading`, `WeatherReadingAggregate` and `WeatherChannelRecord` gained a nullable `DeviceId`, so readings from non-device sources (NWS, OpenWeatherMap, Open-Meteo) are unaffected.
 - **Per-device channel keys**: readings are addressed as `temperature.indoor@greenhouse-01`, with channel names themselves staying canonical so sanity bounds and calculated channels (dewpoint, feels-like, wind chill, heat index) apply per device. `GetCurrentReadingsAsync` now groups by `(ChannelName, DeviceId)`; grouping by channel alone meant two devices reporting the same channel overwrote each other on the dashboard and shared one all-time record row.
@@ -435,10 +435,10 @@ All notable changes to frcastr are documented here.
 - **Re-keying a device's stored history**: the device dialog lists the channels a device already has rows under, with counts, and can move them onto the new channel names so a corrected override does not leave the history stranded. Readings and aggregates are renamed in place; where the target already has rows, all-time records merge by extreme and overlapping aggregate periods collapse with sample-count-weighted averages, so nothing is discarded.
 - **Prefix sanity bounds**: channels outside the canonical set now fall back to family bounds (`temperature.*`, `humidity.*`, `dewpoint.*`, `pressure.*`, `battery.*`) instead of being completely unvalidated, plus a `battery.voltage` default.
 
-### Changed
+### ⚙️ Changed
 - **Indoor Temperature widget no longer shows a dew point**: it renders temperature with humidity and today's high/low in one tile, matching the outdoor widget. Indoor dew point tracks room temperature closely enough that it added nothing the humidity reading did not already convey. `renderTempHumidity` now takes a null dew point channel to omit it, and honors the same `showDewpoint` config flag the standalone humidity widgets already used.
 
-### Fixed
+### 🛠️ Fixed
 - **"Feels like" was never calculated without a wind sensor**: `feelslike.outdoor` was computed inside an `if (wind is not null)` block, so any station lacking a `wind.speed` channel — an ESP32 reporting only temperature and humidity, for instance — never got the channel at all and the Feels Like widget stayed empty. Feels-like is now published whenever there is an outdoor temperature, with humidity and wind refining it when present. `heatindex.outdoor` was gated on wind for the same reason despite depending only on temperature and humidity, and is now published without it; `windchill.outdoor` genuinely needs wind and remains gated.
 - **"Feels like" mirrored the thermometer in mild weather**: outside the wind-chill (≤ 10 °C with wind ≥ 4.8 km/h) and heat-index (≥ 27 °C with RH ≥ 40 %) domains, the calculation returned the raw air temperature, so for most of the year feels-like was identical to the measured temperature and humidity and wind had no effect. That middle band now uses the Bureau of Meteorology apparent temperature (`AT = Ta + 0.33e − 0.70ws − 4.00`), which varies continuously with temperature, humidity and wind. Wind chill and heat index still apply inside their published domains.
 - **Heat index ignored the two published NWS adjustments**: the Rothfusz regression is least accurate in very dry and very humid corners, where the NWS specifies correction terms. Both are now applied, which notably affects warm, very humid conditions (RH > 85 % between 27–31 °C).
@@ -457,63 +457,63 @@ All notable changes to frcastr are documented here.
 
 ## [0.4.2] - 2026-07-07
 
-### Fixed
+### 🛠️ Fixed
 - **Alerts refresh crashed every tick, silently blocking severe-alert emails**: `AlertsRefreshBackgroundService` hardcoded `AlertCache.SourceId = 0` with a comment claiming "0 = NWS system source," but no `DataSources` row with `Id = 0` was ever seeded (`Id` is an identity column starting at 1), so every save threw `FK_AlertCaches_DataSources_SourceId` and aborted before the severe/extreme alert email step ever ran. The service now finds or creates a real "NWS Alerts" `DataSource` row (`Type=Alerts`, matching the existing admin-configurable source type used by `DataSourceTestService`) and uses its actual `Id`, so the source is also visible/manageable from Admin → Data Sources.
 
 ## [0.4.1] - 2026-07-02
 
-### Fixed
+### 🛠️ Fixed
 - **Weather animation widget shows the moon during daytime**: `SunriseSunsetService` anchored its CoordinateSharp calculation on the UTC calendar date instead of the station's local calendar date. CoordinateSharp binds each sunrise/sunset/dawn/dusk/moonrise/moonset event to the UTC calendar day of the date it's given, so for stations far from UTC a single local day's morning and evening events can straddle two different UTC days — pairing "today's" sunrise with yesterday's or tomorrow's sunset. This made `isNightNow()` think it was night for several hours before sunset (west of UTC) or after sunrise (east of UTC). The service now anchors on the station's local date and scans the neighboring UTC days, keeping whichever result actually converts back to that local date.
 
 ## [0.4.0] - 2026-06-30
 
-### Added
+### ➕ Added
 - **Moon-phase night animation for Weather Animation widget**: the `wa-sun` and `wa-partly-cloudy` animations now show the current moon-phase emoji (from `/api/weather/moon`) instead of the sun disc whenever the current time is before sunrise or after sunset (per `/api/weather/sun`), and switch back to the sun automatically at sunrise. Cloud/rain/snow/lightning animations are unchanged since they never rendered a sun/moon disc.
 
-### Changed
+### ⚙️ Changed
 - **Weather animation cloud thresholds adjusted**: `wa-cloud` now triggers above 65 % cloud coverage (was ≥ 50 %); `wa-partly-cloudy` now covers 20–64 % (was 20–49 %).
 
 ## [0.3.0] - 2026-06-27
 
-### Added
+### ➕ Added
 - **Open-Meteo current conditions pull**: `OpenMeteoAdapter` now implements `IDataPullAdapter` in addition to the existing forecast adapters. A new "Open-Meteo (current conditions)" preset (type=Pull) is available in the data source dialog. It fetches the `current=` endpoint and emits `temperature.outdoor`, `humidity.outdoor`, `pressure`, `cloud.coverage`, `wind.speed`, `wind.direction`, and `wind.gust`. Coordinates fall back to global station settings if not in the source config.
 - **Partly cloudy weather animation** (`wa-partly-cloudy`): new animation showing a sun peeking behind a drifting cloud; triggers automatically when `cloud.coverage` is between 20–49 %. The `manualCondition` config option also accepts `"partly-cloudy"` for manual override.
 
-### Fixed
+### 🛠️ Fixed
 - **Open-Meteo data source presets used wrong provider string**: the "Open-Meteo (forecast)" preset was writing `{"provider":"open-meteo"}` (with hyphen) to the config, but `OpenMeteoAdapter.Provider` is `"openmeteo"` (no hyphen), causing adapter lookup to fail in both the test service and the poll background service. Both presets now write `{"provider":"openmeteo"}`.
 - **Open-Meteo current conditions source never polled**: the only Open-Meteo preset set `type=Forecast`, which `DataPullBackgroundService` ignores. The new current-conditions preset sets `type=Pull` so the background service includes it in the poll cycle.
 - **Open-Meteo adapter not detected by URL in pull and test services**: `DataPullBackgroundService` and `DataSourceTestService` now detect `api.open-meteo.com` in the source URL and route to the openmeteo adapter, matching the existing behavior in `ForecastRefreshBackgroundService`.
 
-### Fixed
+### 🛠️ Fixed
 - **Weather animation widget always shows sun**: the `animClass` function only returned `wa-cloud` when wind speed exceeded 50 km/h, so cloudy or overcast conditions always rendered the sun animation. The NWS data-pull adapter now parses `cloudLayers` from the observation response and emits a `cloud.coverage` channel (0–100 %). The animation logic now shows the cloud animation when `cloud.coverage` is ≥ 50 % (scattered or heavier), falling back to the wind-speed check when no cloud data is available.
 - **Outside temp widget H/L uses wrong day boundary**: the `/api/weather/daily-extremes` endpoint was using `DateTime.Today` (server local midnight) to bound the calendar day. It now reads `Station.TimeZone` and converts UTC now to station local time, so the high/low resets at local midnight regardless of where the server is hosted.
 - **Anonymous users can only see the Default dashboard**: `GetNames`, `GetWidgets`, and `GetLayout` filtered by `OwnerId == null`, so dashboards created by a logged-in admin (stored with their `OwnerId`) were invisible to logged-out users. All three endpoints now skip the owner filter when the request is anonymous, making all dashboards publicly visible.
 
-### Changed
+### ⚙️ Changed
 - **Outside temp H/L moved to bottom-left of widget**: the daily high/low temperatures in the Outdoor (and Indoor) Temperature widgets now appear left-aligned at the bottom of the widget card, below the timestamp row, instead of centered in the middle of the card alongside humidity.
 - **Hourly and daily forecast widget text and icon scaling**: icons and labels now use container-query units (`cqmin`) so they grow proportionally with widget size; cell minimum widths increased (daily: 56 → 72 px, hourly: 50 → 64 px) for better readability on tablets and larger displays.
 
 ## [0.2.0] - 2026-06-23
 
-### Added
+### ➕ Added
 - **N/S/E/W labels on wind compass**: the wind widget compass now shows all four cardinal direction labels (N, S, E, W) inside the circle, not just N.
 - **Year period on History page**: the period selector now includes "Year" in addition to Day/Week/Month, with the x-axis using monthly granularity. Export also gains the Year option.
 
-### Fixed
+### 🛠️ Fixed
 - **History chart shows data 4 hours early / cuts off recent readings**: `WeatherReading.Timestamp` is stored as UTC but SQLite returns it with `Kind=Unspecified`. System.Text.Json serialized these without 'Z', so JavaScript's `Date` constructor parsed them as local time, shifting all points by the UTC offset. Fixed by calling `DateTime.SpecifyKind(..., DateTimeKind.Utc)` on all timestamps returned from `GetHistoryAsync`, so the JSON serializer emits 'Z' and browsers interpret them as UTC. The history API endpoint also now treats the parsed date parameter as UTC midnight and clamps `end` to `DateTime.UtcNow`, ensuring today's readings are never excluded by a timezone-shifted midnight boundary.
 - **Pressure widget clips "inHg" unit**: the metric row now wraps when value + unit exceed the widget width, so long unit labels like "inHg" drop to the next line instead of being hidden.
 - **Wind direction label cut off**: the direction label (N, NNE, NE, etc.) is now shown to the right of the speed value on the same line instead of below it, preventing it from being cut off in shorter widgets.
 
-### Changed
+### ⚙️ Changed
 - **History scatter chart is now a single combined chart**: all sensor channels are plotted on one chart instead of one chart per channel. A sidebar on the left lists each channel with a checkbox to show/hide it and a color picker to customize its color. The x-axis time unit adapts to the selected period (hour/day/month). Values are converted to the global unit settings (temperature °C/°F, pressure hPa/inHg/mmHg, wind speed km/h/mph/kn/m/s, rainfall mm/in) and the tooltip shows the unit alongside the value. Timestamps are displayed in the browser's local time zone.
 
-### Added
+### ➕ Added
 - **24-hour time format toggle for DateTime widget**: the Add/Edit Widget dialog Simple mode now shows a "Time Format" dropdown (12-hour / 24-hour) for the Date/Time widget type. Previously only configurable via raw JSON (`{"format":"24h"}`).
 - **Dew point in Temperature widgets**: the Outdoor and Indoor Temperature widgets now show dew point alongside the humidity secondary line (`dp 12.3°`), in muted text. Dew point is read from the pre-calculated `dewpoint.outdoor` / `dewpoint.indoor` channels.
 - **AQI value colored by national standard**: the Air Quality widget's primary AQI number is now colored using the official US AQI color bands — green (0–50), yellow (51–100), orange (101–150), red (151–200), purple (201–300), maroon (301–500).
 - **Station lat/lon exposed to front-end**: `window.frcastrConfig` now includes `stationLat` and `stationLon` from `Station.Latitude`/`Station.Longitude` settings. The Radar widget defaults to the station location when no per-widget lat/lon is saved.
 
-### Fixed
+### 🛠️ Fixed
 - **Rainfall unit label ignores global setting**: `R[14]` only updated the display unit label (`mm`/`in`) when a reading value was present. The unit label is now set from `cfg.rainUnit` unconditionally, so it reflects the global setting even before the first reading arrives.
 - **Wind speed unit label ignores global setting**: same pattern as rainfall — `R[6]` now sets the unit label (`km/h`, `mph`, `kn`, `m/s`) from the global setting independent of whether a value is available.
 - **Feels Like widget doesn't fill container**: `R[13]` was using fixed Bootstrap font classes (`display-5`, `fs-4`) that don't respond to container queries. It now uses `buildMetric()`, matching all other metric widgets.
@@ -522,21 +522,21 @@ All notable changes to frcastr are documented here.
 - **Pressure trend arrow based on full day instead of 3 hours**: the rising/falling/steady direction was computed from all history points (up to 24 h). It now filters to the last 3 hours before calling `trendDirection`, reflecting recent pressure movement.
 - **Pressure/temperature trend arrows were vertical (↑↓)**: changed to diagonal (↗↘) which better conveys gradual rise/fall.
 
-### Changed
+### ⚙️ Changed
 - **History page uses scatter plot instead of bar graph**: each raw reading is now plotted as a point at its actual timestamp (x-axis = time, y-axis = value), giving a true picture of reading distribution. Previously readings were aggregated to daily min/avg/max bars.
 - **Wind widget layout**: compass now stacks vertically — compass disc on top, speed value and direction label below — for better use of square/wide widget layouts.
 - **Metric value font size increased**: `metric-value` scaled from `min(44cqh, 26cqw)` to `min(55cqh, 45cqw)`, filling more horizontal space in wide widgets. Unit and sub-text sizes adjusted proportionally.
 - **Last-updated timestamp styling**: widget timestamps are now barely visible (30% opacity) under normal conditions and switch to dark red (`text-danger`) only when data has not updated for 10+ minutes. The intermediate yellow warning state is removed.
 - **Radar map hides zoom buttons on mobile**: Leaflet's `+`/`−` zoom controls are hidden on viewports narrower than 768 px; pinch-to-zoom remains available.
 
-### Added
+### ➕ Added
 - **Per-widget text color**: the Add/Edit Widget dialogs now have a "Custom text color" toggle with a color picker. The chosen color is stored in the widget's config (`config.color`, saved globally on the `WidgetDefinition`) and drives a `--widget-color` CSS variable on the widget container, coloring both the **title-bar text** and the primary value/number text. Muted units and timestamps are left at their default color for legibility. Leave the toggle off to use the theme default.
 - **Combined temperature + humidity widgets**: the Outdoor and Indoor Temperature widgets now show humidity beneath the temperature (humidity rendered at a smaller size). Controlled by `config.showHumidity` (default on) with an optional `config.humidityChannel` override. The standalone Humidity widgets remain available.
 - **NWS Current Conditions data-source preset**: Admin → Data Sources now has a "Provider preset" dropdown that fills the Config JSON and sets the source Type for common providers (NWS current/forecast, OpenWeatherMap, WeatherAPI, Open-Meteo, AirNow), so configuring NWS current conditions no longer requires hand-typing `{"provider":"nws-current"}`.
 - **Open-Meteo forecast adapter** (`provider: openmeteo`): new `IForecastAdapter` + `IHourlyForecastAdapter` fetches 14-day daily and hourly forecasts from [Open-Meteo](https://open-meteo.com/) (no API key required). Create a Forecast data source with URL `https://api.open-meteo.com/v1/forecast`; lat/lon fall back to `Station.Latitude`/`Station.Longitude`. WMO weather codes are mapped to human-readable condition strings. Supplement or replace NWS for locations with poor NWS coverage.
 - **CoordinateSharp for sun and moon times (no API required)**: `SunriseSunsetService` now uses [CoordinateSharp](https://coordinatesharp.com/) (v3.4.1.1) for all celestial calculations — sunrise, sunset, solar noon, civil dawn/dusk, moonrise, moonset, moon illumination, and moon phase — without any external HTTP call. The `sunrisesunset.io` HTTP client registration has been removed. The math-based `SolarCalculator` and `MoonPhaseCalculator` are retained as fallbacks in `WeatherController` when lat/lon are not configured.
 
-### Fixed
+### 🛠️ Fixed
 - **Golden PM missing; Golden AM showing civil dawn**: the CoordinateSharp migration left `SunriseSunsetService` with `GoldenHourEvening` hardcoded to `null`, and `WeatherController.Sun` mapped Golden AM to civil dawn (sun −6°) rather than golden hour. The service now derives both golden-hour times from the NOAA `SolarCalculator` (sun 6° above the horizon) for the station's coordinates, and the controller maps `GoldenHourMorningEnd`/`GoldenHourEveningStart` to them. `SunriseSunsetResult` gained a `GoldenHourMorning` field.
 - **Wind compass doesn't fill the widget**: the compass was sized from `el.clientHeight` measured before layout (often falling back to 44 px) with fixed-size text. The compass disc and needle now scale with the widget via container-query units (`min(72cqh, 45cqw)`), and the speed/direction readout scales to the space beside it, so the widget fills properly at any size.
 - **Date/time, temperature, humidity, pressure, rainfall, and AQI widgets didn't scale to fill**: these used fixed Bootstrap font classes (`display-5`, `fs-*`). Values now scale with the widget using container-query units (matching the moon widget), via shared `.metric-value`/`.metric-sub` classes on the `container-type: size` widget body.
@@ -547,19 +547,19 @@ All notable changes to frcastr are documented here.
 - **Mobile cell height 1/3 of desktop (landscape tablet)**: `updateCellHeight` on mobile was using `maxRowFromDefs(allDefs)` — the default row span from widget DB definitions — as the reference row count. The actual saved desktop layout is typically much more compact, making the mobile reference row count 3× larger and cell height 3× smaller. `desktopRefRow` is now computed at init from the saved desktop layout (falling back to `maxRowFromDefs` when no layout is saved) and used as the mobile reference, so landscape tablets and desktops produce proportionally identical layouts.
 - **Open-Meteo forecast source auto-routed**: `ForecastRefreshBackgroundService` now recognises `api.open-meteo.com` in a source URL and routes to the `openmeteo` adapter automatically, consistent with the existing `api.weather.gov` → `nws` detection.
 
-### Added
+### ➕ Added
 - **Moon phase widget shows moonrise and moonset**: when Station latitude/longitude are configured the `/api/weather/moon` endpoint now computes moonrise and moonset times using a simplified Jean Meeus algorithm (moon's mean ecliptic longitude/latitude → equatorial coordinates → hour-angle). Times are displayed in a table below the phase icon/name, matching the layout of the Sunrise/Sunset widget. Use `config.showMoonrise: false` to opt out; `config.format: "24h"` switches to 24-hour clock.
 
-### Fixed
+### 🛠️ Fixed
 - **Daily (and hourly) forecast not populating after a failed fetch**: `ForecastRefreshBackgroundService` was caching empty `[]` results with the full 48-hour `ValidUntil`, preventing any retry until the cache expired. Empty fetch results are now skipped (not stored), so the next 15-minute tick re-attempts the fetch.
 - **Minimum widget height too tall**: `computeCellHeight` fallback reduced from 80 → 40 px and minimum floor from 20 → 10 px, allowing widgets to be resized to a smaller minimum size.
 - **Radar map panning still dragging the widget**: replaced the unreliable capture-phase `stopPropagation` approach with `pointerenter`/`pointerleave` listeners that call `frcastrGrid.update(gsItem, { noMove: true/false })` directly on the grid item — GridStack drag is disabled while the pointer is inside the Leaflet container and restored when it leaves.
 
-### Added
+### ➕ Added
 - **AirNow AQI adapter**: new `IDataPullAdapter` with `provider: "airnow"` fetches current AQI from the [AirNow API](https://docs.airnowapi.org/). Create a Data Source with Type = AirQuality and Config `{"provider":"airnow","apiKey":"YOUR_KEY"}`. Reports the highest AQI value across all reported parameters as the `aqi.outdoor` channel. API key falls back to the global `AirNow.ApiKey` setting; lat/lon fall back to `Station.Latitude`/`Station.Longitude`.
 - **Test button on every data source row**: each row in Admin → Data Sources now has a Test button that opens a result modal without requiring the edit modal first. Test support extended to Pull and AirQuality sources (runs the configured adapter and returns up to 5 sample readings) and Alerts sources (queries the NWS active alerts endpoint for the configured or station coordinates).
 
-### Fixed
+### 🛠️ Fixed
 - **Logo disappears on publish/deploy**: `deploy.ps1` used `robocopy /MIR` which deleted the `uploads/` directory on the server (and with it the logo file) on every deploy. Added `/XD uploads` to the robocopy exclusion list so the uploads directory is preserved across deployments.
 - **Daily forecast widget not showing data**: widget now filters NWS forecast periods to daytime entries only, avoiding nighttime-first periods that have no high-temperature value and render as `–`.
 - **Forecast widgets overflow or scroll horizontally**: daily and hourly forecast widgets now measure their container width at render time, fit only as many periods as the available space allows, and distribute them evenly using `flex: 1 1 0` — no wrap, no scrollbar.
@@ -572,7 +572,7 @@ All notable changes to frcastr are documented here.
 - **NWS forecast source with URL returns 0 periods**: when a Forecast source had its URL field set to `https://api.weather.gov/points/{lat},{lon}` and no explicit `provider` in Config, the adapter router defaulted to `generic-json` instead of `nws`, causing the NWS GeoJSON points response to be deserialized as an empty `ForecastPeriod[]`. The router now detects `api.weather.gov` in the URL and routes to the `nws` adapter. The NWS adapter also now extracts lat/lon directly from a `/points/{lat},{lon}` URL as a final fallback when neither Config nor station settings supply coordinates.
 - **NWS current conditions data pull adapter** (`provider: nws-current`): create a Pull data source with `{"latitude": "XX.XX", "longitude": "XX.XX"}` in Config to pull live outdoor conditions from the nearest NWS observation station. Writes channels: `temperature.outdoor`, `humidity.outdoor`, `dewpoint.outdoor`, `pressure` (hPa), `wind.speed` (km/h), `wind.direction` (°), `wind.gust` (km/h), `rainfall` (mm). Useful when no local sensors are installed.
 
-### Fixed
+### 🛠️ Fixed
 - **Sources modal buttons unclickable**: `testResultRow` was placed outside `<div class="modal-body">` and a stray `</div>` pushed `<div class="modal-footer">` outside `<div class="modal-content">`. Bootstrap sets `pointer-events: none` on `.modal-dialog` and restores it only on `.modal-content`, so the Cancel, Test, and Save buttons were never receiving click events. Moved `testResultRow` inside the `row g-3` and removed the extra closing tag.
 - **Copy/delete dashboard buttons did nothing**: `JSON.stringify(name)` produces double-quoted strings (e.g. `"Default"`) which were embedded inside double-quoted HTML `onclick="..."` attributes, breaking the attribute at the first inner quote so the handler was never registered. Attributes now use single quotes (`onclick='...'`) so the JSON value is valid inside them.
 - **Logo disappears after app pool restart / deployment**: logo files were written to `wwwroot/uploads/` which is overwritten when `dotnet publish` deploys new binaries. Files are now stored in `uploads/` under `ContentRootPath` (outside the published `wwwroot`) and served by a dedicated `UseStaticFiles` call with a `PhysicalFileProvider`. Existing stored paths (`/uploads/logo.ext`) continue to work without any DB change.
@@ -595,10 +595,10 @@ All notable changes to frcastr are documented here.
 - **Data source test button**: Test button in the Admin → Data Sources edit modal for Forecast, MQTT, and Radar MapServer sources. Forecast: runs the adapter and returns the first three periods. MQTT: connects, subscribes, and collects up to five messages within 10 seconds. Radar MapServer: requests `{url}?f=json` and validates the ArcGIS service descriptor. Endpoint: `POST /api/admin/datasources/{id}/test`.
 - **Widget channel picker (Simple mode)**: Add and Edit Widget modals now have a Simple/JSON toggle. Simple mode shows type-specific form fields — channel dropdown (populated from live readings via `GET /api/admin/channels`) for sensor widgets, speed/direction/gust channel dropdowns for the Wind widget, period count for forecast widgets, and tile URL / lat / lon / zoom / opacity fields for the Radar widget. JSON mode preserves the raw config textarea for advanced users.
 
-### Fixed
+### 🛠️ Fixed
 - Suppressed false-positive `PendingModelChangesWarning` thrown by EF Core 10.0.9 on startup when the model and migrations are in sync; app was crashing before serving any requests.
 
-### Changed
+### ⚙️ Changed
 - **Dashboard layout is now global**: layout changes (drag/resize) apply to all viewers of a dashboard, not just the user who made the change. Anonymous users immediately see the same layout.
 - **Dashboard fills the browser window**: cell height is computed dynamically from viewport height minus navbar height so all widgets fill the screen without a scrollbar; recalculates on window resize.
 - **Mobile widget ratio**: mobile cell height is computed proportional to column width to preserve the same widget aspect ratio as on desktop.
@@ -612,13 +612,13 @@ All notable changes to frcastr are documented here.
 - **Leaflet.js 1.9.4** added to global layout (`_Layout.cshtml`) for the Radar widget.
 - **Navbar logo is always displayed beside the app name**: previously only one or the other was shown; both are now rendered together when a logo is configured.
 
-### Fixed
+### 🛠️ Fixed
 - **Forecast widgets showed no data** after the `AddForecastCacheIsHourly` migration was added: `Program.cs` now calls `Database.Migrate()` at startup so pending migrations are applied automatically when the app pool restarts, without requiring a separate `dotnet ef database update` step.
 - Creating or editing a data source returned a 400 error (`dto field is required` / `$.type cannot be converted`) because the ASP.NET Core controller JSON pipeline lacked `JsonStringEnumConverter`. String enum values (e.g. `"Forecast"`) are now accepted for all `[FromBody]` parameters.
 - Edit modals on Admin → Data Sources, Widgets, and Webhooks pages showed the wrong Type/Operator value because the Razor-embedded `data-*` JSON serialized enums as integers. All three pages now use `JsonStringEnumConverter` when embedding entity JSON.
 - Dew point in Humidity Outdoor and Humidity Indoor widgets was always displayed in °C regardless of the global temperature unit setting.
 
-### Security
+### 🔒 Security
 - **Login sessions now persist app restarts**: data protection keys are persisted to `data-protection-keys/` on disk (via `PersistKeysToFileSystem`). Previously, keys were in-memory and all auth cookies were invalidated on every restart.
 
 - Multiple named dashboards: widgets belong to a named dashboard; navigate between dashboards with the `?dash=<name>` query parameter. Layouts are persisted per (user, dashboard name) pair. The admin Widgets page exposes a Dashboard field on every widget.
@@ -630,14 +630,14 @@ All notable changes to frcastr are documented here.
 
 ## [0.1.1] — 2026-06-21
 
-### Fixed
+### 🛠️ Fixed
 - Dashboard widgets displayed raw HTML text instead of rendered content: `grid.addWidget` no longer relies on GridStack's `content` option (which was treating the string as text); the shell HTML is now injected directly into `.grid-stack-item-content` after the item is created.
 - `GET /api/dashboard/widgets` now returns an explicit projection with `type` cast to `int`, ensuring the JSON value is always a number regardless of the JSON serializer's enum-handling configuration.
 - Added `.config/dotnet-tools.json` manifest so `dotnet tool restore` in `deploy.ps1` succeeds instead of failing with "Cannot find a manifest file".
 
 ## [0.1.0] — 2026-06-21
 
-### Added
+### ➕ Added
 - Initial release: complete weather station web application
 - Three-project layered architecture: `frcastr.Core`, `frcastr.Infrastructure`, `frcastr.Web`
 - ASP.NET Core 10 + EF Core 10 + MSSQL with automated migrations
