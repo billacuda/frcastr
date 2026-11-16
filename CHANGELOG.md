@@ -2,6 +2,17 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.15.1] - 2026-11-15
+
+### Removed
+- **AirNow API key mode.** AirNow retired the `observation/latLong/current` service the API mode
+  used on 2026-10-01, and it now answers HTTP 410. AirNow sources now read the RSS feed only:
+  set `{"provider":"airnow","feedId":<id>}` (the number from
+  `feeds.airnowapi.org/rss/realtime/<id>.xml`) or a full `rssUrl`. An existing source still
+  configured with `apiKey` reports a clear message telling you to switch to `feedId`. The
+  "AirNow" preset in Admin → Data Sources now fills in the RSS config, and the separate RSS preset
+  was folded into it.
+
 ## [0.15.0] - 2026-11-15
 
 ### Added

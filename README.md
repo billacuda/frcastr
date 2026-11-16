@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.15.0](CHANGELOG.md)**
+## **Current version [0.15.1](CHANGELOG.md)**
 
 ## Stack
 
@@ -65,18 +65,13 @@ every user out on the next deploy.
 | MQTT | Subscribe to broker topics; multi-device via topic patterns, JSON or bare-decimal payloads |
 | DataSink | Upload to Weather Underground, PWSWeather, or custom endpoint |
 | Alerts | NWS severe weather alerts |
-| AirQuality | AirNow (API key, or RSS feed with no key), OpenWeatherMap Air Pollution API, or push ingest |
+| AirQuality | AirNow RSS feed (no key), OpenWeatherMap Air Pollution API, or push ingest |
 
-**AirNow.** Two modes, both writing the highest current AQI to `aqi.outdoor`:
-
-- **RSS feed (no key):** `{"provider":"airnow","feedId":287}`, where `feedId` is the number in your
-  reporting area's feed URL (`https://feeds.airnowapi.org/rss/realtime/<id>.xml`). A full
-  `rssUrl` also works.
-- **API:** `{"provider":"airnow","apiKey":"…","distance":25}`. The key falls back to the
-  `AirNow.ApiKey` setting, and latitude/longitude fall back to the Station settings.
-
-Use **Test** on the source to see the exact reason if it returns nothing, for example no reporting
-area within `distance` miles.
+**AirNow.** Reads AirNow's RSS feed for your reporting area, no API key needed:
+`{"provider":"airnow","feedId":287}`, where `feedId` is the number in the feed URL
+(`https://feeds.airnowapi.org/rss/realtime/<id>.xml`). A full `rssUrl` also works. The highest
+current AQI in the feed is written to `aqi.outdoor`. Use **Test** on the source to see the exact
+reason if it returns nothing.
 
 Pull and AirQuality sources do not log temperature, humidity or dew point. Those channels belong
 to the station's own hardware — a regional figure fetched off the internet sitting on the same

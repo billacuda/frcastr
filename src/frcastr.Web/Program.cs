@@ -138,10 +138,7 @@ builder.Services.AddHttpClient("openmeteo", client =>
 {
     client.BaseAddress = new Uri("https://api.open-meteo.com");
 });
-builder.Services.AddHttpClient("airnow", client =>
-{
-    client.BaseAddress = new Uri("https://www.airnowapi.org");
-});
+builder.Services.AddHttpClient("airnow");
 builder.Services.AddHttpClient("webhook");
 
 // ── Output caching ────────────────────────────────────────────────────────────
