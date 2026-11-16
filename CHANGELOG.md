@@ -2,6 +2,25 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.15.0] - 2026-11-15
+
+### Added
+- **AirNow RSS feed mode (no API key).** An AirQuality source can now read AirNow's EnviroFlash
+  RSS feed instead of the JSON API. Set `{"provider":"airnow","feedId":287}` (the number from
+  `feeds.airnowapi.org/rss/realtime/<id>.xml`) or a full `rssUrl`. Admin → Data Sources has a new
+  "AirNow RSS feed" preset for it. The highest AQI in the feed is written to `aqi.outdoor`.
+
+### Fixed
+- **AirNow Test only said "Adapter returned 0 readings".** Every failure (bad config, missing key
+  or location, HTTP error, AirNow error response, no reporting area in range) was swallowed. Each
+  one now produces a specific message, shown by the Test button and in the source's last error.
+  The API key is never included in the message.
+- **AirNow config with numeric values was ignored.** `"distance": 25` or `"latitude": 44.05`
+  written as numbers made the whole config fail to parse, which silently dropped the API key too.
+  Numbers and strings are both accepted now, and lat/lon are parsed culture-invariantly.
+- **AirNow `-1` AQI values** (AirNow's "no data" marker) are now ignored when choosing the highest
+  AQI.
+
 ## [0.14.0] - 2026-09-11
 
 ### Fixed
