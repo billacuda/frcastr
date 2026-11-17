@@ -68,7 +68,7 @@
             var latest = past[past.length - 1];
             var rvUrl = rv.host + latest.path + '/256/{z}/{x}/{y}/2/1_1.png';
             L.tileLayer(rvUrl, { opacity: 0.6, maxZoom: 18 }).addTo(map);
-            attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank">RainViewer</a>');
+            attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener noreferrer">RainViewer</a>');
         })
         .catch(function (e) { console.warn('frcastr: RainViewer fetch failed', e); });
 

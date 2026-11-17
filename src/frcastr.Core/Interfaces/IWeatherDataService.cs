@@ -20,7 +20,7 @@ public interface IWeatherDataService
     /// tiers may return, bounding the memory an anonymous caller can ask the server to allocate.
     /// </summary>
     Task<HistoryResult> GetHistoryAsync(IEnumerable<string> channelKeys, DateTime start, DateTime end,
-        CancellationToken ct = default, int? maxPointsPerTier = null);
+        int? maxPointsPerTier = null, CancellationToken ct = default);
 
     /// <summary>
     /// Per-month averages for one channel across its whole history: mean daily high, mean daily
@@ -30,7 +30,7 @@ public interface IWeatherDataService
     Task<MonthlyStatsResult> GetMonthlyStatsAsync(string channelKey, CancellationToken ct = default);
 
     Task<IReadOnlyList<WeatherChannelRecord>> GetChannelRecordsAsync(CancellationToken ct = default);
-    Task UpdateChannelRecordAsync(string channelName, decimal value, DateTime timestamp, int sourceId, CancellationToken ct = default, int? deviceId = null);
+    Task UpdateChannelRecordAsync(string channelName, decimal value, DateTime timestamp, int sourceId, int? deviceId = null, CancellationToken ct = default);
 
     /// <summary>
     /// Every channel in one message, in a single round trip. The per-channel overload above saves

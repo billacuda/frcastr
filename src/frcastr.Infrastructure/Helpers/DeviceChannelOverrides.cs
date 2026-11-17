@@ -136,7 +136,7 @@ public static class DeviceChannelOverrides
             return false;
         }
 
-        if (channel.IndexOf(ChannelKey.Separator) >= 0)
+        if (channel.Contains(ChannelKey.Separator))
         {
             error = $"Channel name '{channel}' must not contain '{ChannelKey.Separator}' — the device " +
                     "is already recorded separately and is appended to the key automatically.";

@@ -2,6 +2,33 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.15.2] - 2026-11-16
+
+### Security
+- **Setup no longer builds SQL from names.** The database name and the service account name are
+  now sent to SQL Server as parameters and quoted there. Before, a name containing `]` could end
+  the statement early during setup.
+- **Dashboard names can't inject markup.** The copy and delete buttons in the dashboard menu put the
+  dashboard's name inside their click handler, so a name containing `'` could break out of it and
+  run a script for anyone who opened the menu. The name is now escaped into a data attribute.
+- **Widgets escape everything they print.** The widget type is escaped, and the temperature unit
+  read from the browser can only be C or F.
+- **Logo upload and removal never use a supplied path.** The upload saves the file under a fixed
+  name with an extension from the allowed list, and removing the logo deletes that file by name,
+  not by the stored URL.
+- **RainViewer links open with `noopener`.** The radar attribution link no longer gives the opened
+  page access to the dashboard's window.
+
+### Changed
+- **Code scanning.** DevSkim, OSV-Scanner, Semgrep, PSScriptAnalyzer, ESLint, and a .NET security
+  build with SecurityCodeScan now run on every push and report to the repository's Security tab.
+  Workflow actions are pinned to exact commits. The Trivy workflow, which had no Dockerfile to
+  scan, was removed.
+- **Contributing and security policies.** Added `CONTRIBUTING.md`, `SECURITY.md`, and issue
+  templates.
+- **Analyzer cleanups.** The NWS points pattern is a generated regex, the setup and test-connection
+  code passes cancellation tokens through, and a few smaller code-quality notes were fixed.
+
 ## [0.15.1] - 2026-11-15
 
 ### Removed

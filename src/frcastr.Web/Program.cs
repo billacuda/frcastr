@@ -75,10 +75,8 @@ builder.Services.AddSingleton<
     frcastr.Web.Auth.SessionTimeoutCookieOptions>();
 
 // ── Authorization / RBAC ──────────────────────────────────────────────────────
-builder.Services.AddAuthorization(opts =>
-{
-    opts.AddPolicy("AdministratorOnly", p => p.RequireRole("Administrator"));
-});
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdministratorOnly", p => p.RequireRole("Administrator"));
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
 // ── Repository ────────────────────────────────────────────────────────────────
@@ -362,8 +360,8 @@ app.UseHttpsRedirection();
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
-    headers["X-Content-Type-Options"] = "nosniff";
-    headers["X-Frame-Options"] = "SAMEORIGIN";
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "SAMEORIGIN";
     headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     await next();
 });

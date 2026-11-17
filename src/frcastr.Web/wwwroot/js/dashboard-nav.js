@@ -7,8 +7,10 @@
     }
 
     function dashCopyBtn(name) {
+        // The name rides in an escaped data attribute, never inside the handler's source: a quote
+        // in a dashboard name would otherwise end the attribute and inject markup.
         return '<button class="btn btn-link btn-sm text-body-secondary p-0 pe-1" title="Copy dashboard" ' +
-            "onclick='copyDashboard(event," + JSON.stringify(name) + ")'>&#x2398;</button>";
+            'data-name="' + escHtml(name) + '" onclick="copyDashboard(event, this.dataset.name)">&#x2398;</button>';
     }
 
     function buildMenu(names) {
@@ -31,7 +33,7 @@
                     '" href="/?dash=' + encodeURIComponent(n) + '">' + escHtml(n) + '</a>' +
                     dashCopyBtn(n) +
                     '<button class="btn btn-link btn-sm text-danger p-0 pe-2" title="Delete dashboard" ' +
-                    "onclick='deleteDashboard(event," + JSON.stringify(n) + ")'>&times;</button></li>";
+                    'data-name="' + escHtml(n) + '" onclick="deleteDashboard(event, this.dataset.name)">&times;</button></li>';
             });
         }
 
@@ -53,6 +55,7 @@
                 '</span></span></label></li>';
         }
 
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: dashboard names go through escHtml (text and data-name) or encodeURIComponent (href); the rest is fixed markup.
         menu.innerHTML = html;
 
         var twoColBox = document.getElementById('mobileTwoColBox');

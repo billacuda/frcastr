@@ -451,6 +451,7 @@ window.WeatherWidgets = (function () {
 
         // Update in-place to avoid layout thrash on 1s tick
         if (!el.querySelector('[data-clock]')) {
+            // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
             el.innerHTML =
                 '<div class="d-flex flex-column align-items-center justify-content-center h-100 text-center gap-1" style="min-height:0;overflow:hidden">' +
                 '<div class="fw-bold lh-1 metric-value" data-clock></div>' +
@@ -504,6 +505,7 @@ window.WeatherWidgets = (function () {
 
         var hiLow = hiLowHtml(data, ch);
 
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:     window.formatTemp(v),
             unit:      '&deg;' + u,
@@ -544,6 +546,7 @@ window.WeatherWidgets = (function () {
         // Whole percent on the tile. The tenths are kept in storage and drive the History chart,
         // but a widget is a glance surface — a tenths digit there is noise that also flickers the
         // reading on every poll.
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:     fmt(v, 0),
             unit:      '%',
@@ -561,6 +564,7 @@ window.WeatherWidgets = (function () {
         var dv  = v, ul = 'hPa', dec = 0;
         if (v != null && u === 'inHg') { dv = toInHg(v); ul = 'inHg'; dec = 2; }
         else if (v != null && u === 'mmHg') { dv = toMmHg(v); ul = 'mmHg'; dec = 0; }
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:  fmt(dv, dec),
             unit:   ul,
@@ -587,6 +591,7 @@ window.WeatherWidgets = (function () {
         var rotateCss = dv != null
             ? 'transform:rotate(' + dv + 'deg);'
             : 'visibility:hidden;';
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML =
             '<div class="metric d-flex flex-column h-100 align-items-center justify-content-center text-center" style="min-height:0;overflow:hidden;gap:0.25cqh">' +
             '<div class="wind-compass flex-shrink-0">' +
@@ -610,6 +615,7 @@ window.WeatherWidgets = (function () {
         var readings = (data && data.current && data.current.readings) || {};
         var cls   = animClass(readings, config, data);
         var night = isNightNow(data && data.sun);
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildAnimHtml(cls, night, data && data.moon && data.moon.icon);
     };
 
@@ -693,6 +699,7 @@ window.WeatherWidgets = (function () {
                 '</div>';
         });
         html += '</div>';
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = html;
     };
 
@@ -724,6 +731,7 @@ window.WeatherWidgets = (function () {
                 '</div>';
         }
 
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML =
             '<div class="d-flex flex-column align-items-center h-100 text-center" style="min-height:0">' +
             '<div class="flex-grow-1 d-flex align-items-center justify-content-center" style="min-height:0;overflow:hidden">' +
@@ -740,6 +748,7 @@ window.WeatherWidgets = (function () {
         var v    = val(r);
         var u    = config.unit || unit(r) || '';
         var dec  = config.decimalPlaces != null ? Number(config.decimalPlaces) : 1;
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML =
             '<div class="d-flex flex-column h-100">' +
             '<div class="d-flex align-items-baseline gap-1">' +
@@ -780,6 +789,7 @@ window.WeatherWidgets = (function () {
             return '<tr><td class="pe-3 small text-body-secondary">' + row[0] + '</td>' +
                    '<td class="small fw-semibold">' + escHtml(row[1]) + '</td></tr>';
         }).join('');
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = '<div class="overflow-auto h-100"><table class="table table-sm table-borderless mb-0">' + tableRows + '</table></div>';
     };
 
@@ -805,6 +815,7 @@ window.WeatherWidgets = (function () {
                 '</div>';
         });
         html += '</div>';
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = html;
     };
 
@@ -816,6 +827,7 @@ window.WeatherWidgets = (function () {
         var r  = reading(data, config.channel || 'feelslike.outdoor');
         var v  = val(r);
         var u  = window.getTempUnit ? window.getTempUnit() : (config.unit || 'C');
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:  window.formatTemp(v),
             unit:   '&deg;' + u,
@@ -831,6 +843,7 @@ window.WeatherWidgets = (function () {
         var u   = config.unit || cfg.rainUnit || 'mm';
         var ul  = (u === 'in') ? 'in' : 'mm';
         var dv  = (v != null && u === 'in') ? toIn(v) : v;
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:  fmt(dv),
             unit:   ul,
@@ -860,6 +873,7 @@ window.WeatherWidgets = (function () {
         var cvsId  = 'chart-press-' + wId;
 
         if (!el.querySelector('[data-press-val]')) {
+            // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
             el.innerHTML =
                 '<div class="d-flex align-items-baseline gap-1 mb-1" style="line-height:1">' +
                 '<span class="fw-bold metric-value-sm" data-press-val></span>' +
@@ -891,6 +905,7 @@ window.WeatherWidgets = (function () {
             if (trendEl) {
                 var recent = raw.filter(function (h) { return Date.now() - h.t < THREE_H; });
                 var dir = trendDirection(recent.map(function (h) { return h.v; }), 0.6);
+                // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
                 trendEl.innerHTML = dir ? trendArrow(dir) : '';
             }
         });
@@ -944,6 +959,7 @@ window.WeatherWidgets = (function () {
         // AQI is a whole-number index, so it takes the temperature tiles' H/L line without the
         // display-unit conversion or degree sign.
         var hiLow = hiLowHtml(data, ch, function (x) { return fmt(x, 0); });
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = buildMetric({
             value:      fmt(v, 0),
             unit:       'AQI',
@@ -1015,7 +1031,7 @@ window.WeatherWidgets = (function () {
                     var latest = past[past.length - 1];
                     var rvUrl = rv.host + latest.path + '/256/{z}/{x}/{y}/2/1_1.png';
                     addRadarLayer(rvUrl);
-                    attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank">RainViewer</a>');
+                    attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener noreferrer">RainViewer</a>');
                 })
                 .catch(function (e) { console.warn('frcastr: RainViewer fetch failed', e); });
         }
@@ -1055,7 +1071,7 @@ window.WeatherWidgets = (function () {
             var mapSaveTimer;
             map.on('moveend zoomend', function () {
                 clearTimeout(mapSaveTimer);
-                mapSaveTimer = setTimeout(function () {
+                mapSaveTimer = setTimeout(function () {  // DevSkim: ignore DS172411
                     var c = map.getCenter();
                     window.frcastrSaveWidgetConfig(wId, { lat: c.lat, lon: c.lng, zoom: map.getZoom() });
                 }, 800);
@@ -1109,6 +1125,7 @@ window.WeatherWidgets = (function () {
                 '</div>';
         });
         html += '</div>';
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML = html;
     };
 
@@ -1171,6 +1188,7 @@ window.WeatherWidgets = (function () {
         // The value sits over the scene rather than inside buildMetric, whose flex column would
         // fight an absolutely-positioned background. The .metric-* classes are kept so the
         // container-query sizing in site.css and --widget-color still apply.
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: numbers, fixed markup, and escHtml'd strings only (units are fixed or C/F).
         el.innerHTML =
             '<div class="water-widget h-100" style="min-height:0;overflow:hidden">' +
             buildWaterHtml(waterClass(v, config.bands)) +
@@ -1193,7 +1211,7 @@ window.WeatherWidgets = (function () {
         render: function (type, el, config, data) {
             var renderer = R[type];
             if (!renderer) {
-                el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-body-secondary small">Widget type ' + type + '</div>';
+                el.innerHTML = '<div class="d-flex align-items-center justify-content-center h-100 text-body-secondary small">Widget type ' + escHtml(String(type)) + '</div>';
                 return;
             }
             try {

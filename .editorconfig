@@ -1,0 +1,13 @@
+root = true
+
+[*.cs]
+# Code scanning uploads every analyzer result, so the two rules below are turned off rather than
+# left as standing alerts.
+# CA1859 (use concrete types for performance): the read-only interfaces are deliberate API shape.
+dotnet_diagnostic.CA1859.severity = none
+# CA1873 (avoid expensive logging arguments): the arguments are ids and counts, which cost nothing.
+dotnet_diagnostic.CA1873.severity = none
+
+# EF Core migrations are generated; analyzers skip them.
+[**/Migrations/*.cs]
+generated_code = true

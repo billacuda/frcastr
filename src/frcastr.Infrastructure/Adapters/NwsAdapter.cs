@@ -9,14 +9,14 @@ using Microsoft.Extensions.Logging;
 
 namespace frcastr.Infrastructure.Adapters;
 
-public class NwsAdapter(
+public partial class NwsAdapter(
     IHttpClientFactory httpClientFactory,
     ISettingsService settings,
     ILogger<NwsAdapter> logger) : IForecastAdapter, IHourlyForecastAdapter
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
-    private static readonly Regex PointsUrlPattern =
-        new(@"/points/(-?\d+\.?\d*),(-?\d+\.?\d*)", RegexOptions.None);
+    [GeneratedRegex(@"/points/(-?\d+\.?\d*),(-?\d+\.?\d*)")]
+    private static partial Regex PointsUrlPattern();
 
     public string Provider => "nws";
 
@@ -88,7 +88,7 @@ public class NwsAdapter(
 
         if (string.IsNullOrWhiteSpace(lat) || string.IsNullOrWhiteSpace(lon))
         {
-            var m = PointsUrlPattern.Match(source.Url ?? "");
+            var m = PointsUrlPattern().Match(source.Url ?? "");
             if (m.Success) { lat = m.Groups[1].Value; lon = m.Groups[2].Value; }
         }
 

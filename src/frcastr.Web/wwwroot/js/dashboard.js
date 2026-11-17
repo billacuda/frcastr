@@ -230,7 +230,7 @@
         // Recalculate cell height on window resize
         window.addEventListener('resize', function () {
             clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(function () {
+            resizeTimer = setTimeout(function () {  // DevSkim: ignore DS172411
                 updateCellHeight();
                 renderAll();
             }, 150);
@@ -279,6 +279,7 @@
             : allDefs;
 
         if (!defs.length) {
+            // eslint-disable-next-line no-unsanitized/property -- reviewed: fixed markup and fixed messages only.
             container.innerHTML =
                 '<div class="d-flex align-items-center justify-content-center py-5 text-body-secondary text-center px-3">' +
                 (allDefs.length
@@ -332,7 +333,7 @@
         updateCellHeight();
 
         // Wire change handler after a tick so initial load doesn't trigger a save
-        setTimeout(function () {
+        setTimeout(function () {  // DevSkim: ignore DS172411
             if (!grid) return;
             grid.on('change', function () {
                 clearTimeout(saveTimer);
@@ -351,19 +352,22 @@
     function addShell(itemEl, def) {
         if (!itemEl) return;
         var contentEl = itemEl.querySelector('.grid-stack-item-content');
+        // eslint-disable-next-line no-unsanitized/property -- reviewed: buildShell escapes the title and type and forces the id to a number.
         if (contentEl) contentEl.innerHTML = buildShell(def);
     }
 
     // ── Widget shell HTML ─────────────────────────────────────────────────────
 
     function buildShell(w) {
+        // The id lands inside handler source, so it is forced to a number; the type is escaped.
+        var id = Number(w.id);
         var btnHtml = cfg.isAdmin
-            ? '<button class="widget-action-btn" title="Edit widget" onclick="openEditWidgetModal(' + w.id + ')">&#x270F;</button>' +
-              '<button class="widget-action-btn" title="Remove widget" onclick="confirmRemoveWidget(' + w.id + ')">&#x2715;</button>'
+            ? '<button class="widget-action-btn" title="Edit widget" onclick="openEditWidgetModal(' + id + ')">&#x270F;</button>' +
+              '<button class="widget-action-btn" title="Remove widget" onclick="confirmRemoveWidget(' + id + ')">&#x2715;</button>'
             : '';
         // Titlebar and body padding live in site.css so they can be driven per widget by
         // --widget-pad; see applyWidgetDensity().
-        return '<div class="widget-inner h-100 d-flex flex-column" data-widget-id="' + w.id + '" data-widget-type="' + w.type + '">' +
+        return '<div class="widget-inner h-100 d-flex flex-column" data-widget-id="' + id + '" data-widget-type="' + escHtml(String(w.type)) + '">' +
             '<div class="widget-titlebar d-flex align-items-center">' +
             '<span class="widget-title small fw-semibold text-body-secondary flex-grow-1 text-truncate">' + escHtml(w.title) + '</span>' +
             btnHtml +
@@ -703,7 +707,11 @@
     function fillChannelSelect(selId, channels, selected, addNone) {
         var sel = document.getElementById(selId);
         if (!sel) return;
-        sel.innerHTML = addNone ? '<option value="">(none)</option>' : '<option value="">(select channel)</option>';
+        sel.textContent = '';
+        var first = document.createElement('option');
+        first.value = '';
+        first.textContent = addNone ? '(none)' : '(select channel)';
+        sel.appendChild(first);
         (channels || []).forEach(function (ch) {
             var opt = document.createElement('option');
             // The value stays the channel key — widgets bind by key, so a label can be renamed or
@@ -986,6 +994,9 @@
             if (type === 8 || type === 18) {
                 var pEl = document.getElementById('ewPeriods');
                 var periods = pEl ? parseInt(pEl.value, 10) : NaN;
+                // Reviewed: the admin's own config text, merged with one numeric field and saved
+                // through the authenticated API.
+                // nosemgrep: javascript.lang.security.insecure-object-assign.insecure-object-assign
                 if (!isNaN(periods) && periods > 0) parsed = Object.assign(parsed || {}, { periods: periods });
             }
         }
@@ -1080,6 +1091,7 @@
 
         if (itemEl) {
             var contentEl = itemEl.querySelector('.grid-stack-item-content');
+            // eslint-disable-next-line no-unsanitized/property -- reviewed: buildShell escapes the title and type and forces the id to a number.
             if (contentEl) contentEl.innerHTML = buildShell(w);
             var inner = itemEl.querySelector('[data-widget-id]');
             if (inner) renderWidget(inner);

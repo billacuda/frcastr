@@ -53,7 +53,7 @@
     document.addEventListener('fullscreenchange', function () {
         var isFs = !!document.fullscreenElement;
         var btn = document.getElementById('fullscreenBtn');
-        if (btn) btn.innerHTML = isFs ? '&#x2715;' : '&#x26F6;';
+        if (btn) btn.textContent = isFs ? '✕' : '⛶';
         try { localStorage.setItem(FS_KEY, isFs ? '1' : '0'); } catch (e) {}
     });
 

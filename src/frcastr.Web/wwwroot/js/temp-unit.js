@@ -3,8 +3,11 @@
 
     var UNIT_KEY = 'frcastr-temp-unit';
 
+    // Only 'C' or 'F' ever leaves here: the widgets print the unit into their markup.
     window.getTempUnit = function () {
-        return localStorage.getItem(UNIT_KEY) || 'C';
+        var stored = null;
+        try { stored = localStorage.getItem(UNIT_KEY); } catch (e) { /* storage blocked */ }
+        return stored === 'F' ? 'F' : 'C';
     };
 
     window.toggleTempUnit = function () {

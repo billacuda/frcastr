@@ -66,7 +66,7 @@ static inline bool notYet(unsigned long deadline) {
 // ── WiFi ─────────────────────────────────────────────────────────────────────
 
 static void beginWifi() {
-    Serial.printf("WiFi: connecting to %s\n", WIFI_SSID);
+    Serial.printf("WiFi: connecting to %s\n", WIFI_SSID);  // DevSkim: ignore DS154189
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
 
@@ -88,7 +88,7 @@ static bool waitForWifi(unsigned long deadline) {
 
 #if DEEP_SLEEP_ENABLED
     if (connected) {
-        memcpy(apBssid, WiFi.BSSID(), sizeof(apBssid));
+        memcpy(apBssid, WiFi.BSSID(), sizeof(apBssid));  // DevSkim: ignore DS121708
         apChannel = WiFi.channel();
         apKnown   = true;
     } else {
@@ -98,7 +98,7 @@ static bool waitForWifi(unsigned long deadline) {
 #endif
 
     if (connected) {
-        Serial.printf("WiFi: connected, ip=%s rssi=%d\n",
+        Serial.printf("WiFi: connected, ip=%s rssi=%d\n",  // DevSkim: ignore DS154189
                       WiFi.localIP().toString().c_str(), WiFi.RSSI());
     } else {
         Serial.println("WiFi: connect failed");
@@ -119,10 +119,10 @@ static void ensureWifi() {
 // ── MQTT ─────────────────────────────────────────────────────────────────────
 
 static bool connectMqtt() {
-    Serial.printf("MQTT: connecting to %s:%d as %s\n", MQTT_HOST, MQTT_PORT, DEVICE_ID);
+    Serial.printf("MQTT: connecting to %s:%d as %s\n", MQTT_HOST, MQTT_PORT, DEVICE_ID);  // DevSkim: ignore DS154189
 
-    const char* user = strlen(MQTT_USER) > 0 ? MQTT_USER : nullptr;
-    const char* pass = strlen(MQTT_PASSWORD) > 0 ? MQTT_PASSWORD : nullptr;
+    const char* user = strlen(MQTT_USER) > 0 ? MQTT_USER : nullptr;  // DevSkim: ignore DS140021
+    const char* pass = strlen(MQTT_PASSWORD) > 0 ? MQTT_PASSWORD : nullptr;  // DevSkim: ignore DS140021
 
     // Last will: the broker publishes "offline" (retained) if this device drops off
     // ungracefully, which frcastr picks up on the status topic.
@@ -131,12 +131,12 @@ static bool connectMqtt() {
                            /*cleanSession*/ true);
 
     if (!ok) {
-        Serial.printf("MQTT: connect failed, state=%d\n", mqtt.state());
+        Serial.printf("MQTT: connect failed, state=%d\n", mqtt.state());  // DevSkim: ignore DS154189
         return false;
     }
 
     mqtt.publish(statusTopic, "online", /*retained*/ true);
-    Serial.printf("MQTT: connected, publishing to %s\n", stateTopic);
+    Serial.printf("MQTT: connected, publishing to %s\n", stateTopic);  // DevSkim: ignore DS154189
     return true;
 }
 
@@ -217,7 +217,7 @@ static void publishReading(float temperatureC, float humidityPct) {
     size_t len = serializeJson(doc, payload, sizeof(payload));
 
     if (mqtt.publish(stateTopic, (const uint8_t*)payload, len, /*retained*/ false)) {
-        Serial.printf("Published: %s\n", payload);
+        Serial.printf("Published: %s\n", payload);  // DevSkim: ignore DS154189
     } else {
         Serial.println("MQTT: publish failed");
     }
@@ -231,7 +231,7 @@ static bool readSensorSettled(float& temperatureC, float& humidityPct) {
     for (int attempt = 1; attempt <= SENSOR_READ_ATTEMPTS; attempt++) {
         if (readSensor(temperatureC, humidityPct)) return true;
 
-        Serial.printf("Sensor: read %d/%d failed\n", attempt, SENSOR_READ_ATTEMPTS);
+        Serial.printf("Sensor: read %d/%d failed\n", attempt, SENSOR_READ_ATTEMPTS);  // DevSkim: ignore DS154189
         if (attempt < SENSOR_READ_ATTEMPTS) {
             delay(2100);  // a DHT22 will not produce a fresh sample any sooner than every 2 s
         }
@@ -249,7 +249,7 @@ static bool readSensorSettled(float& temperatureC, float& humidityPct) {
     }
     WiFi.disconnect(/*wifioff*/ true, /*eraseap*/ false);
 
-    Serial.printf("Cycle done: awake %lu ms; sleeping %lu ms\n",
+    Serial.printf("Cycle done: awake %lu ms; sleeping %lu ms\n",  // DevSkim: ignore DS154189
                   millis() - cycleStart, (unsigned long)SLEEP_INTERVAL_MS);
     Serial.flush();
 
@@ -297,10 +297,10 @@ void setup() {
 #if !DEEP_SLEEP_ENABLED
     delay(1000);
 #endif
-    Serial.printf("\nfrcastr sensor %s (device %s)\n", FIRMWARE_VERSION, DEVICE_ID);
+    Serial.printf("\nfrcastr sensor %s (device %s)\n", FIRMWARE_VERSION, DEVICE_ID);  // DevSkim: ignore DS154189
 
-    snprintf(stateTopic,  sizeof(stateTopic),  "%s/%s/state",  MQTT_TOPIC_ROOT, DEVICE_ID);
-    snprintf(statusTopic, sizeof(statusTopic), "%s/%s/status", MQTT_TOPIC_ROOT, DEVICE_ID);
+    snprintf(stateTopic,  sizeof(stateTopic),  "%s/%s/state",  MQTT_TOPIC_ROOT, DEVICE_ID);  // DevSkim: ignore DS154189
+    snprintf(statusTopic, sizeof(statusTopic), "%s/%s/status", MQTT_TOPIC_ROOT, DEVICE_ID);  // DevSkim: ignore DS154189
 
     beginSensor();
 
@@ -309,7 +309,7 @@ void setup() {
     mqtt.setKeepAlive(60);
 
 #if DEEP_SLEEP_ENABLED
-    Serial.printf("Wake #%lu (duty cycle: %lu ms asleep between readings)\n",
+    Serial.printf("Wake #%lu (duty cycle: %lu ms asleep between readings)\n",  // DevSkim: ignore DS154189
                   (unsigned long)++wakeCount, (unsigned long)SLEEP_INTERVAL_MS);
     runReadingCycle(cycleStart);  // ends in deep sleep; never returns
 #else

@@ -927,12 +927,21 @@ public class AdminController(
     {
         if (file is null || file.Length == 0) return BadRequest("No file provided.");
 
-        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         // SVG is deliberately absent. It is a script-bearing document, and /uploads is served
         // same-origin, so an SVG logo is a stored script that runs the moment anyone opens its URL.
-        // The raster formats below cannot carry executable content.
-        var allowed = new[] { ".png", ".jpg", ".jpeg", ".gif", ".webp" };
-        if (!allowed.Contains(ext))
+        // The raster formats below cannot carry executable content. The extension written to disk
+        // is the matching constant, never the client's string, so the file path holds nothing the
+        // client sent.
+        string? ext = Path.GetExtension(file.FileName).ToLowerInvariant() switch
+        {
+            ".png"  => ".png",
+            ".jpg"  => ".jpg",
+            ".jpeg" => ".jpeg",
+            ".gif"  => ".gif",
+            ".webp" => ".webp",
+            _       => null
+        };
+        if (ext is null)
             return BadRequest("Invalid file type. Use PNG, JPEG, GIF or WebP.");
 
         const long maxBytes = 5 * 1024 * 1024;
@@ -997,20 +1006,14 @@ public class AdminController(
     [HttpDelete("branding/logo")]
     public async Task<IActionResult> DeleteLogo(CancellationToken ct)
     {
-        var logoUrl = await settings.GetAsync("Branding.Logo", ct);
-        if (!string.IsNullOrEmpty(logoUrl))
+        // The upload only ever writes uploads/logo.<ext>, so the files to remove are found by that
+        // name rather than by the stored URL: no stored or client value reaches a file path.
+        var uploadsDir = Path.Combine(webEnv.ContentRootPath, "uploads");
+        if (Directory.Exists(uploadsDir))
         {
-            // Resolved and range-checked rather than concatenated: the stored value is only ever
-            // written by the upload above, but a path that escapes the uploads directory must not
-            // be reachable even if that ever stops being true.
-            var uploadsDir = Path.GetFullPath(Path.Combine(webEnv.ContentRootPath, "uploads"));
-            var candidate = Path.GetFullPath(Path.Combine(
-                webEnv.ContentRootPath, logoUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar)));
-
-            if (candidate.StartsWith(uploadsDir + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
-                System.IO.File.Exists(candidate))
+            foreach (var logo in Directory.EnumerateFiles(uploadsDir, "logo.*"))
             {
-                System.IO.File.Delete(candidate);
+                try { System.IO.File.Delete(logo); } catch (IOException) { /* in use; the setting is still cleared */ }
             }
         }
         await settings.UpsertAsync("Branding.Logo", "", modifiedBy: UserName(), ct: ct);

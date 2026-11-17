@@ -11,7 +11,7 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.15.1](CHANGELOG.md)**
+## **Current version [0.15.2](CHANGELOG.md)**
 
 ## Stack
 
@@ -280,6 +280,16 @@ left behind it is cleared. Tick **Delete all-time records outright** to remove t
 
 Passive retention still applies on its own: see the **Retention** section of Settings for how long
 raw readings, aggregates and records are kept before the background services roll them off.
+
+## Contributing and security
+
+- **Contributing:** see [CONTRIBUTING.md](CONTRIBUTING.md). Pull requests aren't accepted at this
+  time, but issues are welcome.
+- **Security problems:** please report them privately, as described in [SECURITY.md](SECURITY.md),
+  not in a public issue.
+- **Code scanning:** DevSkim, OSV-Scanner, Semgrep, PSScriptAnalyzer, ESLint, and a .NET
+  security build run on every push, and their
+  findings go to the repository's Security tab.
 
 ## Version history
 

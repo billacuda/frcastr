@@ -64,7 +64,7 @@ public class OutboundUploadBackgroundService(
             var provider = ExtractProvider(sink.Config);
             var adapter = provider is not null
                 ? adapters.FirstOrDefault(a => a.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase))
-                : adapters.FirstOrDefault();
+                : (adapters.Count > 0 ? adapters[0] : null);
 
             if (adapter is null)
             {

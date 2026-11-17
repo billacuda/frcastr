@@ -93,15 +93,13 @@ public class SetupService : ISetupService
         using (var conn = new SqlConnection(masterCs))
         {
             await conn.OpenAsync(ct);
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SELECT COUNT(*) FROM sys.databases WHERE name = N'{Esc(database)}'";
-            var exists = (int)(await cmd.ExecuteScalarAsync(ct) ?? 0);
-            if (exists == 0)
-            {
-                using var create = conn.CreateCommand();
-                create.CommandText = $"CREATE DATABASE [{Esc(database)}] COLLATE Latin1_General_100_CI_AS_SC_UTF8";
-                await create.ExecuteNonQueryAsync(ct);
-            }
+            // The name travels as a parameter; QUOTENAME makes it a bracketed identifier inside the
+            // server, so a ' or ] in it cannot end the statement early.
+            await ExecAsync(conn,
+                "IF DB_ID(@db) IS NULL BEGIN " +
+                "DECLARE @sql nvarchar(max) = N'CREATE DATABASE ' + QUOTENAME(@db) + N' COLLATE Latin1_General_100_CI_AS_SC_UTF8'; " +
+                "EXEC (@sql); END",
+                ct, ("@db", database));
         }
 
         var appCs = BuildConnectionString(server, database, username, password);
@@ -291,7 +289,7 @@ public class SetupService : ISetupService
         }
     }
 
-    private async Task GrantServiceAccountAsync(string server, string database, string? adminUser, string? adminPassword, CancellationToken ct)
+    private static async Task GrantServiceAccountAsync(string server, string database, string? adminUser, string? adminPassword, CancellationToken ct)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return;
         try
@@ -301,10 +299,22 @@ public class SetupService : ISetupService
             using var conn = new SqlConnection(masterCs);
             await conn.OpenAsync(ct);
 
-            await ExecAsync(conn, $"IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{Esc(account)}') CREATE LOGIN [{Esc(account)}] FROM WINDOWS", ct);
+            // The account name travels as a parameter and becomes an identifier through QUOTENAME,
+            // the same as the database name above.
+            await ExecAsync(conn,
+                "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @acct) BEGIN " +
+                "DECLARE @sql nvarchar(max) = N'CREATE LOGIN ' + QUOTENAME(@acct) + N' FROM WINDOWS'; " +
+                "EXEC (@sql); END",
+                ct, ("@acct", account));
             conn.ChangeDatabase(database);
-            await ExecAsync(conn, $"IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'{Esc(account)}') CREATE USER [{Esc(account)}] FOR LOGIN [{Esc(account)}]", ct);
-            await ExecAsync(conn, $"ALTER ROLE db_owner ADD MEMBER [{Esc(account)}]", ct);
+            await ExecAsync(conn,
+                "IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = @acct) BEGIN " +
+                "DECLARE @sql nvarchar(max) = N'CREATE USER ' + QUOTENAME(@acct) + N' FOR LOGIN ' + QUOTENAME(@acct); " +
+                "EXEC (@sql); END",
+                ct, ("@acct", account));
+            await ExecAsync(conn,
+                "DECLARE @sql nvarchar(max) = N'ALTER ROLE db_owner ADD MEMBER ' + QUOTENAME(@acct); EXEC (@sql);",
+                ct, ("@acct", account));
         }
         catch (Exception ex)
         {
@@ -312,10 +322,15 @@ public class SetupService : ISetupService
         }
     }
 
-    private static async Task ExecAsync(SqlConnection conn, string sql, CancellationToken ct)
+    private static async Task ExecAsync(SqlConnection conn, string sql, CancellationToken ct,
+        params (string Name, string Value)[] parameters)
     {
         using var cmd = conn.CreateCommand();
+        // Reviewed: every caller passes constant SQL; values arrive only through `parameters`.
+        // nosemgrep: csharp.lang.security.sqli.csharp-sqli.csharp-sqli
         cmd.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            cmd.Parameters.Add(name, System.Data.SqlDbType.NVarChar, 256).Value = value;
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -326,7 +341,7 @@ public class SetupService : ISetupService
             DataSource = server,
             InitialCatalog = database,
             Encrypt = true,
-            TrustServerCertificate = true
+            TrustServerCertificate = true  // DevSkim: ignore DS114352 -- local SQL Server installs use a self-signed certificate; the connection is still encrypted
         };
         if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password))
         {
@@ -357,5 +372,4 @@ public class SetupService : ISetupService
         File.WriteAllText(path, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    private static string Esc(string s) => s.Replace("'", "''");
 }

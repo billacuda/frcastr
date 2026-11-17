@@ -250,7 +250,7 @@ public class DataSourceTestService(
         {
             if (client is not null)
             {
-                try { await client.DisconnectAsync(); } catch { }
+                try { await client.DisconnectAsync(cancellationToken: CancellationToken.None); } catch { }
                 client.Dispose();
             }
         }

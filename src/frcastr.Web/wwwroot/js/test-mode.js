@@ -197,9 +197,12 @@ window.TestMode = (function () {
             var r = await fetch('/api/admin/channels');
             if (!r.ok) return;
             var channels = await r.json();
-            list.innerHTML = channels.map(function (c) {
-                return '<option value="' + esc(c.name) + '"></option>';
-            }).join('');
+            list.textContent = '';
+            channels.forEach(function (c) {
+                var opt = document.createElement('option');
+                opt.value = c.name;
+                list.appendChild(opt);
+            });
             list.dataset.loaded = '1';
         } catch (e) { /* free-text entry still works */ }
     }

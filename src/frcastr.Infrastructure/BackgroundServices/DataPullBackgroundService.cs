@@ -94,7 +94,7 @@ public class DataPullBackgroundService(
                     });
 
                     statusService.RecordReading(channel);
-                    await weatherData.UpdateChannelRecordAsync(channel, value.Value, timestamp, source.Id, ct);
+                    await weatherData.UpdateChannelRecordAsync(channel, value.Value, timestamp, source.Id, ct: ct);
                 }
 
                 source.LastPolledAt = now;
@@ -125,7 +125,7 @@ public class DataPullBackgroundService(
 
         return adapters.FirstOrDefault(a =>
             a.Provider.Equals(source.Name, StringComparison.OrdinalIgnoreCase))
-            ?? adapters.FirstOrDefault();
+            ?? (adapters.Count > 0 ? adapters[0] : null);
     }
 
     private static string? ExtractProvider(string? config)

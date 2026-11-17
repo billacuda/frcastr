@@ -202,7 +202,7 @@ public class WeatherDataService(
 
     public async Task<HistoryResult> GetHistoryAsync(
         IEnumerable<string> channelKeys, DateTime start, DateTime end,
-        CancellationToken ct = default, int? maxPointsPerTier = null)
+        int? maxPointsPerTier = null, CancellationToken ct = default)
     {
         // Keys may be device-scoped ("temperature.indoor@greenhouse-01"). Query on the canonical
         // channel names, then filter to the requested devices.
@@ -548,7 +548,7 @@ public class WeatherDataService(
         => await dbContext.WeatherChannelRecords.OrderBy(r => r.ChannelName).ToListAsync(ct);
 
     public Task UpdateChannelRecordAsync(string channelName, decimal value,
-        DateTime timestamp, int sourceId, CancellationToken ct = default, int? deviceId = null)
+        DateTime timestamp, int sourceId, int? deviceId = null, CancellationToken ct = default)
         => UpdateChannelRecordsAsync([(channelName, value)], timestamp, sourceId, deviceId, ct);
 
     public async Task UpdateChannelRecordsAsync(

@@ -23,15 +23,15 @@ jobs:
       security-events: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run DevSkim scanner
-        uses: microsoft/DevSkim-Action@v1
+        uses: microsoft/DevSkim-Action@4b5047945a44163b94642a1cecc0d93a3f428cc6 # v1.0.16
         with:
-          # Production code is scanned; test data, build output, and vendored libraries are left out.
-          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/tests/**,**/node_modules/**,**/wwwroot/lib/**"
+          # Production code is scanned; test data, build output, vendored libraries, and the dev-only launch profile are left out.
+          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/tests/**,**/node_modules/**,**/wwwroot/lib/**,**/Properties/launchSettings.json"
 
       - name: Upload DevSkim scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: devskim-results.sarif

@@ -68,7 +68,7 @@ public class DatabaseModel(ISetupService setup) : PageModel
         {
             DataSource = server,
             InitialCatalog = db,
-            TrustServerCertificate = true,
+            TrustServerCertificate = true,  // DevSkim: ignore DS114352 -- local SQL Server installs use a self-signed certificate; the connection is still encrypted
             Encrypt = true
         };
         if (!string.IsNullOrWhiteSpace(user) && !string.IsNullOrWhiteSpace(pass))

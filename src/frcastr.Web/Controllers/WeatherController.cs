@@ -164,7 +164,7 @@ public class WeatherController(
         var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
         var todayLocal = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, 0, 0, 0, DateTimeKind.Unspecified);
         var startUtc = TimeZoneInfo.ConvertTimeToUtc(todayLocal, tz);
-        var result = await weatherData.GetHistoryAsync([], startUtc, startUtc.AddDays(1), ct);
+        var result = await weatherData.GetHistoryAsync([], startUtc, startUtc.AddDays(1), ct: ct);
 
         // Device-scoped keys ("temperature.indoor@indoor-01") are emitted alongside the bare ones,
         // because a widget bound to one device's channel looked itself up by that key and found
@@ -375,7 +375,7 @@ public class WeatherController(
         if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
-        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct, MaxPointsPerTier);
+        var result = await weatherData.GetHistoryAsync(channelList, start, end, MaxPointsPerTier, ct);
         return Ok(result);
     }
 
@@ -406,7 +406,7 @@ public class WeatherController(
         if (end > now) end = now;
 
         var channelList = channels?.Split(',', StringSplitOptions.TrimEntries) ?? [];
-        var result = await weatherData.GetHistoryAsync(channelList, start, end, ct, MaxPointsPerTier);
+        var result = await weatherData.GetHistoryAsync(channelList, start, end, MaxPointsPerTier, ct);
 
         // Without a device column two sensors on the same canonical channel are indistinguishable
         // in the file. The channel keeps its canonical name — an export is read by machines, so a
