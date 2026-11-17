@@ -1,0 +1,46 @@
+name: ".NET 10 Security Build"
+
+on:
+  push:
+    paths: [ '**.cs', '**.csproj', '**.sln', '**.slnx', '**.props', '.github/workflows/dotnet10scan.yml' ]
+  pull_request:
+    paths: [ '**.cs', '**.csproj', '**.sln', '**.slnx', '**.props', '.github/workflows/dotnet10scan.yml' ]
+  workflow_dispatch:
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build and generate SARIF
+        # Outputs all C# compiler, .NET analyzer, and SCS warnings to SARIF, one file per project
+        # (see Directory.Build.props).
+        run: dotnet build frcastr.slnx --configuration Release -p:SarifDir=${{ github.workspace }}/sarif
+
+      - name: Give each project its own category
+        # Code scanning takes one run per category, and every project's file is a run from the same
+        # tool (the C# compiler), so each gets its own: dotnet10-scs/<project>.
+        if: always()
+        run: |
+          for f in sarif/*.sarif; do
+            name=$(basename "$f" .sarif)
+            jq --arg id "dotnet10-scs/$name/" '.runs |= map(.automationDetails = {id: $id})' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+          done
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          # No category here: it would override the per-project ones set above.
+          sarif_file: sarif

@@ -11,7 +11,7 @@ on:
   pull_request:
     branches: [ "main" ]
   schedule:
-    - cron: '34 21 * * 1'
+    - cron: '20 23 * * 5'
 
 jobs:
   lint:
@@ -27,6 +27,9 @@ jobs:
 
       - name: Run DevSkim scanner
         uses: microsoft/DevSkim-Action@v1
+        with:
+          # Production code is scanned; test data, build output, and vendored libraries are left out.
+          ignore-globs: "**/.git/**,**/bin/**,**/obj/**,**/tests/**,**/node_modules/**,**/wwwroot/lib/**"
 
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
