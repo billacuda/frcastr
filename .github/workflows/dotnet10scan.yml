@@ -30,12 +30,15 @@ jobs:
 
       - name: Give each project its own category
         # Code scanning takes one run per category, and every project's file is a run from the same
-        # tool (the C# compiler), so each gets its own: dotnet10-scs/<project>.
+        # tool (the C# compiler), so each gets its own: dotnet10-scs/<project>. Results that sit only
+        # in obj/ are dropped: those are source-generator output (Razor, Regex) we can't change.
         if: always()
         run: |
           for f in sarif/*.sarif; do
             name=$(basename "$f" .sarif)
-            jq --arg id "dotnet10-scs/$name/" '.runs |= map(.automationDetails = {id: $id})' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+            jq --arg id "dotnet10-scs/$name/" '.runs |= map(.automationDetails = {id: $id}
+              | .results |= map(select([.locations[]?.physicalLocation.artifactLocation.uri // ""]
+                                        | all(test("/obj/") | not))))' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
           done
 
       - name: Upload SARIF to GitHub Security

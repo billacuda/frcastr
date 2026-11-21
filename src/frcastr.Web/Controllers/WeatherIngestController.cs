@@ -98,7 +98,7 @@ public class WeatherIngestController(
             if (adjusted is null)
             {
                 logger.LogWarning("Source {SourceId}: reading '{Channel}'={Value} dropped (out of bounds).",
-                    source.Id, req.Channel, req.Value);
+                    source.Id, req.Channel.Replace("\r", "").Replace("\n", ""), req.Value);
                 continue;
             }
 

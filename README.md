@@ -11,13 +11,14 @@ Personal weather station web application. Accepts pushed sensor data and pulls f
 
 ---
 
-## **Current version [0.15.2](CHANGELOG.md)**
+## **Current version [0.15.3](CHANGELOG.md)**
 
 ## Stack
 
 - ASP.NET Core 10, Razor Pages, MVC API controllers
 - EF Core 10 + MSSQL Server
-- Bootstrap 5, GridStack v12, Chart.js (CDN)
+- Bootstrap 5, GridStack v12, Chart.js, Leaflet, and MapLibre GL (CDN)
+- Radar maps: OpenFreeMap base map and RainViewer radar, both free with no key
 - IIS InProcess hosting
 
 ## Quick start
@@ -203,6 +204,11 @@ so it applies to a narrow widget on a wide dashboard as much as to a phone. A pe
 hotter is marked 🌡️ beside its condition glyph — the day's high for a daily tile, the hour's own
 temperature for an hourly one. Forecast temperatures are always whole degrees regardless of the
 **Display → Show tenths** setting, since a forecast is an estimate.
+
+**Radar** (the Radar page and the Radar widget) draws RainViewer's latest radar frame over an
+OpenFreeMap base map that follows the light or dark theme. Neither needs an API key. RainViewer's
+free tier serves radar up to zoom 7, so closer in the radar is stretched from that level and looks
+softer. A Radar widget can point at its own tile URL instead, which isn't capped.
 
 **Water Temperature** reads `temperature.water` and draws the value over an animated pool scene that
 follows the reading — icy, cool, open water, or steamy. The thresholds default to 77 / 84 / 90 °F

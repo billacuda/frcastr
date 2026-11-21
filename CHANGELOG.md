@@ -2,6 +2,24 @@
 
 All notable changes to frcastr are documented here.
 
+## [0.15.3] - 2026-11-21
+
+### 🛠️ Fixed
+- **Radar map works again.** CARTO's dark base map now needs an API key, and RainViewer's free
+  radar stops at zoom 7, showing "Zoom Level Not Supported" past it. The base map is now
+  OpenFreeMap (light and dark, no key), and radar tiles beyond zoom 7 are stretched from zoom 7.
+  This applies to the Radar page and the radar widget.
+
+### 🔒 Security
+- **Ingest log lines can't be forged.** A rejected reading's channel name is logged with its line
+  breaks removed.
+- **Unused jQuery, jQuery Validation, and Bootstrap copies removed.** Nothing loaded them; Bootstrap
+  comes from the CDN.
+
+### ⚙️ Changed
+- **Code scanning skips generated code.** The .NET security build no longer reports compiler
+  warnings from Razor and Regex source-generator output in `obj/`.
+
 ## [0.15.2] - 2026-11-16
 
 ### Security

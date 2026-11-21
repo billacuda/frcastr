@@ -989,33 +989,24 @@ window.WeatherWidgets = (function () {
             return;
         }
 
-        function getBaseTileUrl() {
-            var htmlEl = document.getElementById('htmlRoot');
-            var isDark = htmlEl && htmlEl.getAttribute('data-bs-theme') === 'dark';
-            return isDark
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-        }
-
         el.style.padding = '0';
         var isMobileView = window.innerWidth < 768;
         var map = L.map(el, { zoomControl: !isMobileView, attributionControl: false }).setView([lat, lon], zoom);
         el._leafletMap = map;
 
-        // Base tile layer (theme-aware)
-        var baseLayer = L.tileLayer(getBaseTileUrl(), { maxZoom: 18 });
-        baseLayer.addTo(map);
-        el._radarBaseLayer = baseLayer;
-
-        // Attribution
         var attr = L.control.attribution({ position: 'bottomright', prefix: false });
-        attr.addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>');
         attr.addTo(map);
 
-        // Radar overlay
-        function addRadarLayer(url) {
+        // Base map (OpenFreeMap, follows the theme). The map's 'remove' handler below disconnects it.
+        el._themeObserver = frcastrBaseMap(map, attr);
+
+        // Radar overlay. maxNativeZoom stretches the last real zoom level past where the source
+        // stops serving tiles.
+        function addRadarLayer(url, maxNativeZoom) {
             if (el._radarLayer) { map.removeLayer(el._radarLayer); el._radarLayer = null; }
-            el._radarLayer = L.tileLayer(url, { opacity: opacity, maxZoom: 18 });
+            var opts = { opacity: opacity, maxZoom: 18 };
+            if (maxNativeZoom) opts.maxNativeZoom = maxNativeZoom;
+            el._radarLayer = L.tileLayer(url, opts);
             el._radarLayer.addTo(map);
         }
 
@@ -1030,26 +1021,10 @@ window.WeatherWidgets = (function () {
                     if (!past || !past.length) return;
                     var latest = past[past.length - 1];
                     var rvUrl = rv.host + latest.path + '/256/{z}/{x}/{y}/2/1_1.png';
-                    addRadarLayer(rvUrl);
+                    addRadarLayer(rvUrl, 7); // RainViewer's free tier stops at zoom 7
                     attr.addAttribution('<a href="https://www.rainviewer.com/api.html" target="_blank" rel="noopener noreferrer">RainViewer</a>');
                 })
                 .catch(function (e) { console.warn('frcastr: RainViewer fetch failed', e); });
-        }
-
-        // Swap base tile when Bootstrap theme changes
-        var htmlRoot = document.getElementById('htmlRoot');
-        if (htmlRoot) {
-            var themeObserver = new MutationObserver(function () {
-                var newUrl = getBaseTileUrl();
-                if (el._radarBaseLayer) {
-                    map.removeLayer(el._radarBaseLayer);
-                    el._radarBaseLayer = L.tileLayer(newUrl, { maxZoom: 18 });
-                    el._radarBaseLayer.addTo(map);
-                    el._radarBaseLayer.bringToBack();
-                }
-            });
-            themeObserver.observe(htmlRoot, { attributes: true, attributeFilter: ['data-bs-theme'] });
-            el._themeObserver = themeObserver;
         }
 
         // Disable GridStack drag while the pointer is inside the map so Leaflet pan works freely
